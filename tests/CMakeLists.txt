@@ -8,6 +8,8 @@ FetchContent_MakeAvailable(Catch2)
 
 add_executable(riskengine_tests
     test_smoke.cpp
+    test_black_scholes.cpp
+    test_implied_vol.cpp
 )
 target_link_libraries(riskengine_tests PRIVATE riskengine Catch2::Catch2WithMain)
 
