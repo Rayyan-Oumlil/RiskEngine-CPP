@@ -31,8 +31,9 @@ q = 0, σ = 20 %, T = 1 year.
 
 ### 2.2 Protocol: generator, seeds, efficiency metric, regeneration
 
-**Generator.** Philox 4×32-10, a counter-based generator: draw *i* of block *b* is
-Philox(key = seed, counter = (i, b, stream)). There is no state to share or advance. The
+**Generator.** Philox 4×32-10, a counter-based generator: call *j* of block *b* is
+Philox(key = seed, counter = (j, b, stream)), and its 128 bits give uniforms 2*j* and 2*j* + 1.
+There is no state to share or advance. The
 implementation is checked at compile time against the Random123 known-answer vectors. Uniforms
 are the midpoints (k + ½)·2⁻⁵² of a 2⁵²-point grid: never 0 or 1, and 1 − u is exact. Normals
 come from inversion (Wichura AS241, relative error ≤ 10⁻¹⁵ against a 60-digit reference), never
