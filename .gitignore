@@ -21,3 +21,5 @@ compile_commands.json
 .vscode/
 *.user
 .idea/
+__pycache__/
+*.pyc
