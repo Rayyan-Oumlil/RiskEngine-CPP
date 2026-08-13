@@ -17,6 +17,17 @@ enum class ImpliedVolStatus {
     NotConverged,
 };
 
+inline const char* to_string(ImpliedVolStatus s) {
+    switch (s) {
+        case ImpliedVolStatus::Ok: return "ok";
+        case ImpliedVolStatus::ZeroTimeValue: return "zero_time_value";
+        case ImpliedVolStatus::BelowIntrinsic: return "below_intrinsic";
+        case ImpliedVolStatus::AboveMaximum: return "above_maximum";
+        case ImpliedVolStatus::NotConverged: return "not_converged";
+    }
+    return "unknown";
+}
+
 struct ImpliedVolResult {
     double vol;
     ImpliedVolStatus status;
@@ -40,8 +51,11 @@ std::pair<double, int> brent_root(F&& f, double a, double b, double fa, double f
             d = e = b - a;
         }
         if (std::abs(fc) < std::abs(fb)) {
-            a = b; b = c; c = a;
-            fa = fb; fb = fc; fc = fa;
+            // Keep b as the best estimate: swap b and c; a (the previous iterate) becomes the new c.
+            std::swap(b, c);
+            std::swap(fb, fc);
+            a = c;
+            fa = fc;
         }
         const double tol = 2.0 * eps * std::abs(b);
         const double m = 0.5 * (c - b);
