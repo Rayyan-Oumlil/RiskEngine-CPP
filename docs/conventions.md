@@ -69,8 +69,9 @@ In that branch:
 ## Randomness and reproducibility
 
 - **Generator:** Philox 4x32-10 (`core/rng/philox.hpp`), checked against the Random123
-  known-answer vectors at compile time. Draw *i* of block *b* is Philox(key = seed,
-  counter = (i, b, stream)); there is no generator state to share or advance.
+  known-answer vectors at compile time. Philox call *j* of block *b* uses key = seed and
+  counter = (j, b, stream); its 128 bits give uniforms 2*j* and 2*j* + 1 of the block. There is no
+  generator state to share or advance.
 - **`SeedKey{seed, stream}`** identifies a random experiment. A stochastic pricer is a pure
   function of (market, key): re-running with the same key after a bump gives exact common random
   numbers. Use a different `stream` for an independent sub-simulation (e.g. a pilot run).
@@ -98,7 +99,8 @@ repository must come from a Release build of a clean, committed tree (`"git_dirt
 ## Reference values
 
 Reference values are generated independently of the code under test, with mpmath
-(`pip install -r tools/requirements.txt`):
+(`pip install -r tools/requirements.txt`, which pins the exact versions used for the committed
+references and figures):
 
 - `tools/bs_reference.py`: Black-Scholes prices and Greeks at 50 digits for
   `tests/test_black_scholes.cpp`. The Greeks are numerical derivatives of the high-precision price,
