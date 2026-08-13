@@ -89,9 +89,11 @@ std::pair<double, int> brent_root(F&& f, double a, double b, double fa, double f
 // well conditioned in the deep wings, where the price spans hundreds of orders of magnitude.
 // Newton is deliberately not used: it diverges where vega -> 0.
 //
-// Conditioning: an in-the-money quote carries its time value next to a much larger intrinsic
-// value, so the time value is only known to ~eps * price in absolute terms. The recovered vol is
-// then only as accurate as eps * price / vega allows; out-of-the-money quotes do not lose this.
+// Conditioning: a price is a difference a - b of two terms, each rounded to a relative
+// eps * (1 + d^2), so the vol can only be recovered to about eps * (1 + d^2) * (a + b) / (sigma *
+// vega) relative (experiments/iv_roundtrip.cpp measures this). For an in-the-money quote a + b is
+// of the order of S + K while the time value is tiny, so the loss is large; out of the money the
+// solver reaches ~1e-13.
 //
 // Jaeckel's "Let's Be Rational" (2015) remains the long-term target (see
 // docs/riskengine_research.md 3.1); this bracketed solver is the robust fallback.

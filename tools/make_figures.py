@@ -78,8 +78,39 @@ def fd_vcurve(data, meta, out):
     plt.close(fig)
 
 
+def read_rows(path):
+    with open(path, newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def iv_roundtrip(path, meta, out):
+    rows = [r for r in read_rows(path) if r["status"] == "ok"]
+    fig, ax = plt.subplots(figsize=(7.0, 4.6))
+    lo, hi = 1e-17, 1.0
+    ax.loglog([lo, hi], [lo, hi], color=MUTED, linewidth=1, linestyle=(0, (4, 3)))
+    ax.annotate("error = noise bound", (1e-9, 1e-9), xytext=(-8, 10), textcoords="offset points",
+                color=MUTED, ha="right")
+    for (name, itm), color in zip([("out-of-the-money quote", "0"), ("in-the-money quote", "1")], SERIES):
+        pts = [(float(r["noise_bound"]), float(r["rel_vol_error"])) for r in rows if r["in_the_money"] == itm]
+        shown = [(x, y) for x, y in pts if y > 0.0]
+        exact = len(pts) - len(shown)
+        ax.scatter([x for x, _ in shown], [y for _, y in shown], s=30, color=color, edgecolors=SURFACE,
+                   linewidths=0.8, label=f"{name} ({len(pts)} solved, {exact} exact to the bit, not shown)")
+    ax.set_xlim(lo, hi)
+    ax.set_ylim(lo, hi)
+    ax.set_xlabel(r"noise bound $\varepsilon\,(1 + (1+d^2)(a+b)/(\sigma\,\mathrm{vega}))$")
+    ax.set_ylabel("relative error of the recovered vol")
+    ax.set_title("Implied vol round trip: the error never exceeds the quote's own noise", loc="left")
+    ax.legend(loc="upper left", frameon=True, facecolor=SURFACE, edgecolor="none", framealpha=1.0)
+    fig.tight_layout()
+    fig.savefig(out, metadata={"Date": None})
+    plt.close(fig)
+
+
+# Each renderer takes (csv path, metadata dict, output path).
 FIGURES = {
-    "fd_vcurve": fd_vcurve,
+    "fd_vcurve": lambda path, meta, out: fd_vcurve(read_csv(path), meta, out),
+    "iv_roundtrip": iv_roundtrip,
 }
 
 
@@ -95,10 +126,9 @@ def main():
         sys.exit(f"unknown figure(s): {sorted(unknown)}")
     args.out.mkdir(parents=True, exist_ok=True)
     for fig_id in args.ids or sorted(FIGURES):
-        data = read_csv(args.results / f"{fig_id}.csv")
         meta = json.loads((args.results / f"{fig_id}.meta.json").read_text())
         out = args.out / f"{fig_id}.svg"
-        FIGURES[fig_id](data, meta, out)
+        FIGURES[fig_id](args.results / f"{fig_id}.csv", meta, out)
         print(f"wrote {out}")
 
 
