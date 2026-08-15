@@ -27,7 +27,11 @@ Full methodology, formulas, and verified reference numbers: [`docs/riskengine_re
 
 ## Status
 
-Early scaffold (Phase 0). See [`docs/riskengine_research.md`](docs/riskengine_research.md) §12 for the phased build plan, validation gates, and critical path.
+Phases 1 and 2 of the plan ([`docs/riskengine_research.md`](docs/riskengine_research.md) §12) are done, and the report has its first two sections: [`docs/model_risk_report.md`](docs/model_risk_report.md) §2 (reproducibility protocol) and §3 (analytic ground truth).
+
+- **Phase 1, analytic ground truth:** Black-Scholes-Merton with continuous dividend yield, closed-form Greeks, bracketed implied-vol solver, explicit T → 0 / σ → 0 branches, [`docs/conventions.md`](docs/conventions.md). Reference values match 50-digit mpmath to 1e-9; put-call parity holds to 1e-14. The report shows why an in-the-money quote cannot pin its implied vol (up to 5.7 % error, fully explained by the quote's own rounding) and the finite-difference V-curve.
+- **Phase 2, stochastic infrastructure:** Philox 4×32-10 (checked against Random123), AS241 inverse normal, Welford/Chan accumulators, fixed-block reduction that is bit-identical for any thread count and across GCC/Clang, and the experiment harness (`experiments/` → `data/results/*.csv` + `.meta.json` → `docs/figures/*.svg`).
+- **Next:** Phase 4, the generic Monte Carlo engine and variance reduction (Phase 3, trees, is off the critical path).
 
 ## Building
 
@@ -38,6 +42,15 @@ ctest --test-dir build --output-on-failure
 ```
 
 Requires a C++20 compiler (GCC, Clang, or MSVC) and CMake 3.25+.
+
+To regenerate the report's results and figures (Release build of a clean tree; Python tools need `pip install -r tools/requirements.txt`):
+
+```
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release
+build-release/experiments/fd_vcurve && build-release/experiments/iv_roundtrip
+python3 tools/make_figures.py
+```
 
 ## License
 
