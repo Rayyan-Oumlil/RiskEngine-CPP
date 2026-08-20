@@ -92,3 +92,52 @@ TEST_CASE("Expired option prices at its intrinsic value with zero error", "[mc]"
     CHECK(e.value == 10.0);
     CHECK(e.std_error == 0.0);
 }
+
+TEST_CASE("Terminal-spot control: unbiased, strong in the money, weak far out of it", "[mc][control]") {
+    const MonteCarloConfig cfg{.paths = 200'000, .threads = 4};
+    auto se_ratio = [&](double k) {
+        const VanillaOption o{Strike{k}, Maturity{kMaturity}, OptionType::Call};
+        const Estimate plain = MonteCarlo<GBM, VanillaPayoff>({k, OptionType::Call}, Maturity{kMaturity}, cfg).price(kMarket, SeedKey{10});
+        const Estimate ctl = MonteCarlo<GBM, VanillaPayoff, TerminalSpotControl>({k, OptionType::Call}, Maturity{kMaturity}, cfg)
+                                 .price(kMarket, SeedKey{10});
+        check_within_4se(ctl, black_scholes_price(o, kMarket));
+        return ctl.std_error / plain.std_error;
+    };
+    CHECK(se_ratio(70.0) < 0.3);  // deep in the money: the call is almost S_T - K
+    CHECK(se_ratio(160.0) > 0.7); // far out of the money: correlation with S_T collapses
+}
+
+TEST_CASE("Geometric control on the arithmetic Asian: same price, far tighter", "[mc][control]") {
+    const MonteCarloConfig cfg{.paths = 100'000, .steps = 12, .threads = 4};
+    const Estimate plain = MonteCarlo<GBM, ArithmeticAsianPayoff>({100.0, OptionType::Call}, Maturity{kMaturity}, cfg)
+                               .price(kMarket, SeedKey{11});
+    const Estimate ctl = MonteCarlo<GBM, ArithmeticAsianPayoff, GeometricAsianControl>(
+                             {100.0, OptionType::Call}, Maturity{kMaturity}, cfg, {100.0, OptionType::Call})
+                             .price(kMarket, SeedKey{12});
+    const double combined_se = std::hypot(plain.std_error, ctl.std_error);
+    CHECK(std::abs(plain.value - ctl.value) < 4.0 * combined_se);
+    CHECK(ctl.std_error < plain.std_error / 10.0);
+}
+
+TEST_CASE("A payoff used as its own control is priced exactly", "[mc][control]") {
+    // Y = X: beta = 1 and every sample equals mu, whatever the paths.
+    const MonteCarloConfig cfg{.paths = 20'000, .steps = 12, .threads = 2};
+    const Estimate e = MonteCarlo<GBM, GeometricAsianPayoff, GeometricAsianControl>(
+                           {100.0, OptionType::Put}, Maturity{kMaturity}, cfg, {100.0, OptionType::Put})
+                           .price(kMarket, SeedKey{13});
+    const double exact = geometric_asian_price(OptionType::Put, Strike{100}, Maturity{kMaturity}, 12, kMarket);
+    CHECK(std::abs(e.value - exact) <= 1e-12 * exact);
+    CHECK(e.std_error <= 1e-12 * exact);
+}
+
+TEST_CASE("Control and antithetic variates combine, deterministically", "[mc][control]") {
+    MonteCarloConfig cfg{.paths = 100'000, .threads = 1, .antithetic = true};
+    const MonteCarlo<GBM, VanillaPayoff, TerminalSpotControl> pricer({110.0, OptionType::Put}, Maturity{kMaturity}, cfg);
+    const Estimate a = pricer.price(kMarket, SeedKey{14});
+    check_within_4se(a, black_scholes_price(VanillaOption{Strike{110}, Maturity{kMaturity}, OptionType::Put}, kMarket));
+    cfg.threads = 8;
+    const Estimate b = MonteCarlo<GBM, VanillaPayoff, TerminalSpotControl>({110.0, OptionType::Put}, Maturity{kMaturity}, cfg)
+                           .price(kMarket, SeedKey{14});
+    CHECK(a.value == b.value);
+    CHECK(a.std_error == b.std_error);
+}

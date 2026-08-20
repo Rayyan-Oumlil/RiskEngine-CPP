@@ -7,6 +7,7 @@
 #include <exception>
 #include <mutex>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include "riskengine/core/estimate.hpp"
@@ -31,13 +32,15 @@ struct BlockPlan {
     }
 };
 
-// Runs block_fn(block, n) -> Welford for every block and merges the results in block order.
-// block_fn is called concurrently from several threads and must not share mutable state between
-// blocks. The first exception thrown by a block is rethrown once all threads have stopped.
+// Runs block_fn(block, n) -> Acc for every block and merges the results in block order. Acc is any
+// default-constructible accumulator with merge(const Acc&) (Welford, Covariance). block_fn is called
+// concurrently from several threads and must not share mutable state between blocks. The first
+// exception thrown by a block is rethrown once all threads have stopped.
 template <class BlockFn>
-Welford reduce_blocks(const BlockPlan& plan, BlockFn&& block_fn) {
+auto reduce_blocks(const BlockPlan& plan, BlockFn&& block_fn) {
+    using Acc = std::remove_cvref_t<std::invoke_result_t<BlockFn&, std::uint32_t, std::uint64_t>>;
     assert(plan.blocks > 0);
-    std::vector<Welford> partial(plan.blocks);
+    std::vector<Acc> partial(plan.blocks);
     std::atomic<std::uint32_t> next{0};
     std::exception_ptr error;
     std::mutex error_mutex;
@@ -63,8 +66,8 @@ Welford reduce_blocks(const BlockPlan& plan, BlockFn&& block_fn) {
     } // jthreads join here
     if (error) std::rethrow_exception(error);
 
-    Welford total;
-    for (const Welford& w : partial) total.merge(w);
+    Acc total;
+    for (const Acc& p : partial) total.merge(p);
     return total;
 }
 
