@@ -1,4 +1,4 @@
-"""Independent high-precision Black-Scholes reference values for tests/test_black_scholes.cpp.
+"""Independent high-precision Black-Scholes reference values for the analytic tests.
 
 Prices are evaluated with mpmath at 50 significant digits. Greeks are *numerical* derivatives
 of that price (mpmath.diff), not the closed-form Greek formulas, so they independently check
@@ -47,3 +47,17 @@ for name, args in CASES.items():
             "rho": diff(lambda x: f(rr=x), r),
         }
         print(f"//   {kind}: " + ", ".join(f"{k}={mp.nstr(v, 17)}" for k, v in vals.items()))
+
+
+def digital(kind, S, K, r, q, sigma, T):
+    d2 = (log(S / K) + (r - q - sigma**2 / 2) * T) / (sigma * sqrt(T))
+    return exp(-r * T) * (ncdf(d2) if kind == "call" else ncdf(-d2))
+
+
+print("// cash-or-nothing digitals (tests/test_analytic_exotics.cpp)")
+for name in ("canonical", "dividend"):
+    S, K, r, q, sigma, T = map(mpf, CASES[name])
+    for kind in ("call", "put"):
+        p = digital(kind, S, K, r, q, sigma, T)
+        d = diff(lambda x: digital(kind, x, K, r, q, sigma, T), S)
+        print(f"//   {name} {kind}: price={mp.nstr(p, 17)}, delta={mp.nstr(d, 17)}")
