@@ -32,6 +32,9 @@ target_link_libraries(riskengine_harness INTERFACE riskengine)
 set(RISKENGINE_EXPERIMENTS
   fd_vcurve
   iv_roundtrip
+  mc_convergence
+  mc_coverage
+  mc_efficiency
 )
 
 foreach(experiment IN LISTS RISKENGINE_EXPERIMENTS)
