@@ -1,5 +1,5 @@
 {
-  "experiment": "fd_vcurve",
+  "experiment": "mc_convergence",
   "git_commit": "86942a1c332b3dc066b17c7c345241689dbcd2fd",
   "git_dirty": false,
   "compiler": "GNU 13.3.0",
@@ -9,15 +9,10 @@
   "hardware_threads": 4,
   "created_utc": "2026-09-24T01:49:41Z",
   "parameters": {
-    "spot": 100,
-    "strike": 100,
-    "rate": 0.050000000000000003,
-    "dividend_yield": 0,
-    "vol": 0.20000000000000001,
-    "maturity": 1,
-    "exact_delta": 0.6368306511756191,
-    "exact_gamma": 0.018762017345846895,
-    "machine_epsilon": 2.2204460492503131e-16,
-    "h_grid": "10^(k/8) for k = -112..-8"
+    "payoff": "European call, K = 100, T = 1",
+    "market": "S = 100, r = 0.05, q = 0, sigma = 0.2",
+    "exact": 10.45058357218555,
+    "seed": "SeedKey{2026, p} for N = 2^p",
+    "blocks": 64
   }
 }
