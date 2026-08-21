@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -28,7 +29,7 @@
 //   }
 //
 // writes <out>/my_experiment.csv and <out>/my_experiment.meta.json (git commit, compiler, build
-// type, flags, parameters, UTC time). <out> defaults to data/results and is set with --out <dir>.
+// type, flags, CPU, parameters, UTC time). <out> defaults to data/results and is set with --out <dir>.
 // Output is byte-for-byte deterministic: %.17g round-trip formatting and '\n' line endings on
 // every platform.
 namespace riskengine::harness {
@@ -59,6 +60,19 @@ inline std::string json_string(std::string_view s) {
         }
     }
     return out + "\"";
+}
+
+// CPU model, for experiments that report timings: "model name" from /proc/cpuinfo on Linux,
+// "unknown" elsewhere.
+inline std::string cpu_model() {
+    std::ifstream cpuinfo("/proc/cpuinfo");
+    for (std::string line; std::getline(cpuinfo, line);) {
+        if (line.rfind("model name", 0) == 0) {
+            const auto colon = line.find(':');
+            if (colon != std::string::npos) return std::string(trim(std::string_view(line).substr(colon + 1)));
+        }
+    }
+    return "unknown";
 }
 
 template <class T>
@@ -142,6 +156,8 @@ public:
             << "  \"compiler\": " << detail::json_string(RISKENGINE_COMPILER) << ",\n"
             << "  \"build_type\": " << detail::json_string(RISKENGINE_BUILD_TYPE) << ",\n"
             << "  \"cxx_flags\": " << detail::json_string(detail::trim(RISKENGINE_CXX_FLAGS)) << ",\n"
+            << "  \"cpu\": " << detail::json_string(detail::cpu_model()) << ",\n"
+            << "  \"hardware_threads\": " << std::thread::hardware_concurrency() << ",\n"
             << "  \"created_utc\": " << detail::json_string(std::format("{:%FT%TZ}", now)) << ",\n"
             << "  \"parameters\": {";
         for (std::size_t i = 0; i < params_.size(); ++i)
