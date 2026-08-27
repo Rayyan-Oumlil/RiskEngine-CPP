@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <span>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -68,6 +69,11 @@ public:
         assert(!config_.antithetic || (config_.paths % 2 == 0 && config_.pilot_paths % 2 == 0));
         assert(config_.sampling == Sampling::PseudoRandom ||
                (config_.replications >= 2 && draws() <= sobol_data::kMaxDimension));
+        // Checked in every build, not only with assertions: past 2^32 points per run the 32-bit
+        // Sobol sequence would silently wrap around and repeat its points.
+        if (config_.sampling == Sampling::RandomizedQmc &&
+            samples_per_run(config_.paths) > (std::uint64_t{1} << Sobol::kBits))
+            throw std::invalid_argument("randomized QMC supports at most 2^32 samples per replication");
     }
 
     Estimate price(const MarketState& m, SeedKey key) const {
