@@ -9,11 +9,16 @@ namespace riskengine {
 
 // Identifies a reproducible random experiment. A stochastic pricer is a pure function of
 // (market, SeedKey): calling it twice with the same key after bumping the market gives exact
-// common random numbers. `stream` separates independent uses under one seed (e.g. a pilot run).
+// common random numbers. `stream` separates independent uses under one seed; callers use streams
+// below 2^30, the two top bits are reserved for internal sub-streams derived from a caller's key.
 struct SeedKey {
     std::uint64_t seed;
     std::uint32_t stream = 0;
 };
+
+inline constexpr std::uint32_t kPilotStreamBit = 0x8000'0000u;    // control-variate pilot runs
+inline constexpr std::uint32_t kScrambleStreamBit = 0x4000'0000u; // QMC scrambling seeds
+inline constexpr std::uint32_t kReservedStreamBits = kPilotStreamBit | kScrambleStreamBit;
 
 // The random sequence of one block of paths. Philox call j of block b uses key = seed and
 // counter = (j, b, stream), and its 128 bits give uniforms 2j and 2j + 1 of the block. Blocks never
