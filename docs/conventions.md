@@ -74,7 +74,9 @@ In that branch:
   generator state to share or advance.
 - **`SeedKey{seed, stream}`** identifies a random experiment. A stochastic pricer is a pure
   function of (market, key): re-running with the same key after a bump gives exact common random
-  numbers. Use a different `stream` for an independent sub-simulation (e.g. a pilot run).
+  numbers. Use a different `stream` for an independent sub-simulation. Callers use streams below
+  2³⁰: the top two bits are reserved for sub-streams the engine derives from a caller's key (control-
+  variate pilot runs, QMC scrambling seeds), so they can never collide with a caller's own streams.
 - **Uniforms** are the midpoints (k + ½)·2⁻⁵² of a 2⁵² grid: never 0 or 1, and 1 − u is exact.
 - **Normals** come from the inverse CDF (Wichura AS241, `core/rng/normal_icdf.hpp`), never from
   `std::normal_distribution` (implementation-defined) or Box-Muller (breaks quasi-random points).
@@ -82,9 +84,15 @@ In that branch:
 - **Blocks:** simulations are cut into a fixed number of blocks (`BlockPlan::blocks`, default 64),
   merged with Welford/Chan in block order. The result depends on the seed, the sample count and the
   block count, and **never** on the thread count.
+- **Randomized QMC:** Sobol points (Joe-Kuo direction numbers, up to 1,024 dimensions) in Gray-code
+  order, one coordinate per normal, Owen-scrambled per replication and mapped to (0, 1) as
+  (x + ½)·2⁻³². The estimate is the mean of `replications` independent scramblings and its standard
+  error their standard deviation over √replications.
 - **What is bit-identical where:** uniforms, on every platform (integer arithmetic only). Normals
   and everything downstream, across thread counts always, and across GCC and Clang on Linux (same
-  libm; `-ffp-contract=off` forbids silent FMA fusion). MSVC's `log`/`exp` may differ in the last
+  libm; `-ffp-contract=off` forbids silent FMA fusion, and `-fno-builtin-{exp,log,erfc,pow}` forbids
+  the compiler from evaluating those functions itself on constants, with a rounding that differs from
+  the run-time library's). MSVC's `log`/`exp` may differ in the last
   ulp, so on MSVC the golden normals are checked to a few ulps and the exact simulation golden
   value is skipped (its statistical check still runs).
 

@@ -27,12 +27,12 @@ Full methodology, formulas, and verified reference numbers: [`docs/riskengine_re
 
 ## Status
 
-Phases 1 and 2 of the plan ([`docs/riskengine_research.md`](docs/riskengine_research.md) §12) are done and Phase 4 is nearly done (randomized QMC remains). The report [`docs/model_risk_report.md`](docs/model_risk_report.md) has §2 (reproducibility protocol), §3 (analytic ground truth) and §5.1–5.2 (Monte Carlo convergence and variance reduction).
+Phases 1, 2 and 4 of the plan ([`docs/riskengine_research.md`](docs/riskengine_research.md) §12) are done. The report [`docs/model_risk_report.md`](docs/model_risk_report.md) has §2 (reproducibility protocol), §3 (analytic ground truth) and §5 (Monte Carlo: convergence, variance reduction, randomized QMC).
 
 - **Phase 1, analytic ground truth:** Black-Scholes-Merton with continuous dividend yield, closed-form Greeks, bracketed implied-vol solver, explicit T → 0 / σ → 0 branches, digital and discrete geometric-Asian closed forms, [`docs/conventions.md`](docs/conventions.md). The report shows why an in-the-money quote cannot pin its implied vol and the finite-difference V-curve.
 - **Phase 2, stochastic infrastructure:** Philox 4×32-10 (checked against Random123), AS241 inverse normal, Welford/Chan accumulators, fixed-block reduction that is bit-identical for any thread count and across GCC/Clang, and the experiment harness (`experiments/` → `data/results/*.csv` + `.meta.json` → `docs/figures/*.svg`).
-- **Phase 4, Monte Carlo:** a generic engine over the `PathModel` concept (GBM with exact steps), terminal and path payoffs, antithetic variates, and control variates with an independent pilot estimate of β. Standard errors are calibrated (95 % intervals cover 94.5–95.7 % of the time); the efficiency table shows gains up to 1,300× and the planned failures (antithetic on a straddle, S_T control far out of the money).
-- **Next:** randomized quasi-Monte Carlo (Sobol + Owen scrambling) to close Phase 4, then Phase 5, the Greeks-under-noise study.
+- **Phase 4, Monte Carlo:** a generic engine over the `PathModel` concept (GBM with exact steps), terminal and path payoffs, antithetic variates, control variates with an independent pilot estimate of β, and randomized QMC (Sobol with Joe-Kuo directions, hash-based Owen scrambling, Brownian bridge). Standard errors are calibrated (95 % intervals cover 94.5–95.7 % of the time); variance reduction reaches 1,500× and QMC a 344× smaller error on an ATM call, and the report shows where each technique fails (antithetic on a straddle, S_T control far out of the money, QMC on a 12-D digital).
+- **Next:** Phase 5, the Greeks-under-noise study (finite differences with and without common random numbers, pathwise, likelihood ratio, on a call and a digital).
 
 ## Building
 
@@ -49,7 +49,7 @@ To regenerate the report's results and figures (Release build of a clean tree; P
 ```
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release
-for e in fd_vcurve iv_roundtrip mc_convergence mc_coverage mc_efficiency; do build-release/experiments/$e; done
+for e in fd_vcurve iv_roundtrip mc_convergence mc_coverage mc_efficiency qmc_convergence; do build-release/experiments/$e; done
 python3 tools/make_figures.py
 ```
 
