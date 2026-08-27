@@ -1,13 +1,13 @@
 {
   "experiment": "iv_roundtrip",
-  "git_commit": "86942a1c332b3dc066b17c7c345241689dbcd2fd",
+  "git_commit": "3a447c244a3a3149df5a66150334bd06e5afea07",
   "git_dirty": false,
   "compiler": "GNU 13.3.0",
   "build_type": "Release",
-  "cxx_flags": "-O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off",
+  "cxx_flags": "-O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off -fno-builtin-exp -fno-builtin-log -fno-builtin-erfc -fno-builtin-pow",
   "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
   "hardware_threads": 4,
-  "created_utc": "2026-09-24T01:49:41Z",
+  "created_utc": "2026-09-24T02:11:20Z",
   "parameters": {
     "spot": 100,
     "rate": 0.029999999999999999,
