@@ -23,12 +23,18 @@ target_compile_features(riskengine INTERFACE cxx_std_20)
 find_package(Threads REQUIRED)
 target_link_libraries(riskengine INTERFACE Threads::Threads)
 
-# Reproducibility: never let the compiler fuse a*b+c into an FMA on its own, since that changes
-# results between compilers and target ISAs (docs/riskengine_research.md 10).
+# Reproducibility (docs/riskengine_research.md 10):
+# - never let the compiler fuse a*b+c into an FMA on its own, since that changes results between
+#   compilers and target ISAs;
+# - never let it evaluate exp/log/erfc/pow of compile-time constants itself: GCC does so with
+#   correctly rounded MPFR arithmetic while the run-time libm may differ in the last ulp, so the
+#   same expression would give different bits depending on what the optimizer inlines. (sqrt is
+#   correctly rounded by IEEE either way and stays a builtin.)
 if(MSVC)
   target_compile_options(riskengine INTERFACE /W4 /WX /permissive- /fp:precise)
 else()
-  target_compile_options(riskengine INTERFACE -Wall -Wextra -Werror -ffp-contract=off)
+  target_compile_options(riskengine INTERFACE -Wall -Wextra -Werror -ffp-contract=off
+    -fno-builtin-exp -fno-builtin-log -fno-builtin-erfc -fno-builtin-pow)
 endif()
 
 if(RISKENGINE_ENABLE_SANITIZERS AND NOT MSVC)
