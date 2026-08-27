@@ -141,3 +141,64 @@ TEST_CASE("Control and antithetic variates combine, deterministically", "[mc][co
     CHECK(a.value == b.value);
     CHECK(a.std_error == b.std_error);
 }
+
+TEST_CASE("Randomized QMC is unbiased within 4 SE, with and without a bridge", "[mc][qmc]") {
+    MonteCarloConfig cfg{.paths = 4096, .threads = 4, .sampling = Sampling::RandomizedQmc, .replications = 16};
+    const VanillaOption call{Strike{100}, Maturity{kMaturity}, OptionType::Call};
+    check_within_4se(MonteCarlo<GBM, VanillaPayoff>({100.0, OptionType::Call}, Maturity{kMaturity}, cfg).price(kMarket, SeedKey{20}),
+                     black_scholes_price(call, kMarket));
+    check_within_4se(MonteCarlo<GBM, DigitalPayoff>({110.0, OptionType::Put}, Maturity{kMaturity}, cfg).price(kMarket, SeedKey{21}),
+                     digital_price(VanillaOption{Strike{110}, Maturity{kMaturity}, OptionType::Put}, kMarket));
+    cfg.steps = 12;
+    for (bool bridge : {false, true}) {
+        INFO("bridge " << bridge);
+        cfg.brownian_bridge = bridge;
+        check_within_4se(MonteCarlo<GBM, GeometricAsianPayoff>({100.0, OptionType::Call}, Maturity{kMaturity}, cfg)
+                             .price(kMarket, SeedKey{22}),
+                         geometric_asian_price(OptionType::Call, Strike{100}, Maturity{kMaturity}, 12, kMarket));
+    }
+    const Estimate e = MonteCarlo<GBM, VanillaPayoff>({100.0, OptionType::Call}, Maturity{kMaturity}, cfg).price(kMarket, SeedKey{20});
+    CHECK(e.samples == 16u * 4096u);
+}
+
+TEST_CASE("Randomized QMC beats pseudo-random at equal cost on a smooth problem", "[mc][qmc]") {
+    // 16 x 4096 scrambled Sobol points against 65,536 pseudo-random paths.
+    const MonteCarloConfig qmc{.paths = 4096, .threads = 4, .sampling = Sampling::RandomizedQmc, .replications = 16};
+    const MonteCarloConfig prng{.paths = 16 * 4096, .threads = 4};
+    const Estimate q = MonteCarlo<GBM, VanillaPayoff>({100.0, OptionType::Call}, Maturity{kMaturity}, qmc).price(kMarket, SeedKey{23});
+    const Estimate p = MonteCarlo<GBM, VanillaPayoff>({100.0, OptionType::Call}, Maturity{kMaturity}, prng).price(kMarket, SeedKey{23});
+    CHECK(q.std_error < p.std_error / 10.0);
+}
+
+TEST_CASE("The Brownian bridge sharpens QMC on a path payoff and is harmless with pseudo-random", "[mc][qmc][bridge]") {
+    MonteCarloConfig cfg{.paths = 4096, .steps = 12, .threads = 4, .sampling = Sampling::RandomizedQmc, .replications = 16};
+    const ArithmeticAsianPayoff asian{100.0, OptionType::Call};
+    const Estimate plain = MonteCarlo<GBM, ArithmeticAsianPayoff>(asian, Maturity{kMaturity}, cfg).price(kMarket, SeedKey{24});
+    cfg.brownian_bridge = true;
+    const Estimate bridged = MonteCarlo<GBM, ArithmeticAsianPayoff>(asian, Maturity{kMaturity}, cfg).price(kMarket, SeedKey{24});
+    CHECK(bridged.std_error < plain.std_error / 2.0);
+
+    // Pseudo-random with a bridge is the same distribution: still unbiased.
+    const MonteCarloConfig prng{.paths = 100'000, .steps = 12, .threads = 4, .brownian_bridge = true};
+    check_within_4se(MonteCarlo<GBM, GeometricAsianPayoff>({100.0, OptionType::Put}, Maturity{kMaturity}, prng).price(kMarket, SeedKey{25}),
+                     geometric_asian_price(OptionType::Put, Strike{100}, Maturity{kMaturity}, 12, kMarket));
+}
+
+TEST_CASE("Randomized QMC is thread-invariant and composes with antithetic and control variates", "[mc][qmc]") {
+    MonteCarloConfig cfg{.paths = 2048, .steps = 12, .threads = 1, .antithetic = true,
+                         .sampling = Sampling::RandomizedQmc, .replications = 8, .brownian_bridge = true};
+    const ArithmeticAsianPayoff asian{100.0, OptionType::Call};
+    const GeometricAsianControl control{100.0, OptionType::Call};
+    const Estimate one = MonteCarlo<GBM, ArithmeticAsianPayoff, GeometricAsianControl>(asian, Maturity{kMaturity}, cfg, control)
+                             .price(kMarket, SeedKey{26});
+    cfg.threads = 8;
+    const Estimate eight = MonteCarlo<GBM, ArithmeticAsianPayoff, GeometricAsianControl>(asian, Maturity{kMaturity}, cfg, control)
+                               .price(kMarket, SeedKey{26});
+    CHECK(one.value == eight.value);
+    CHECK(one.std_error == eight.std_error);
+    // Unbiased against a large pseudo-random reference with the same control.
+    const MonteCarloConfig ref_cfg{.paths = 400'000, .steps = 12, .threads = 4};
+    const Estimate ref = MonteCarlo<GBM, ArithmeticAsianPayoff, GeometricAsianControl>(asian, Maturity{kMaturity}, ref_cfg, control)
+                             .price(kMarket, SeedKey{27});
+    CHECK(std::abs(one.value - ref.value) < 4.0 * std::hypot(one.std_error, ref.std_error));
+}
