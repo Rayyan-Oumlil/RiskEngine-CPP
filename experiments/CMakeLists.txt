@@ -35,6 +35,7 @@ set(RISKENGINE_EXPERIMENTS
   mc_convergence
   mc_coverage
   mc_efficiency
+  qmc_convergence
 )
 
 foreach(experiment IN LISTS RISKENGINE_EXPERIMENTS)

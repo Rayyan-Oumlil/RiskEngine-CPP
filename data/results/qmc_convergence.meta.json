@@ -1,5 +1,5 @@
 {
-  "experiment": "mc_coverage",
+  "experiment": "qmc_convergence",
   "git_commit": "3a447c244a3a3149df5a66150334bd06e5afea07",
   "git_dirty": false,
   "compiler": "GNU 13.3.0",
@@ -7,13 +7,11 @@
   "cxx_flags": "-O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off -fno-builtin-exp -fno-builtin-log -fno-builtin-erfc -fno-builtin-pow",
   "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
   "hardware_threads": 4,
-  "created_utc": "2026-09-24T02:11:21Z",
+  "created_utc": "2026-09-24T02:11:32Z",
   "parameters": {
     "market": "S = 100, r = 0.05, q = 0, sigma = 0.2, T = 1",
-    "replications": 1000,
-    "paths_per_replication": 10000,
-    "seed": "SeedKey{i, 0} for the call, SeedKey{i, 1} for the digital, i = 0..999",
-    "call_exact": 10.45058357218555,
-    "digital_exact": 0.11667211811931322
+    "replications": 64,
+    "seeds": "pseudo-random: SeedKey{2026, r}; RQMC: SeedKey{2026}, scramblings r = 0..63",
+    "problems": "ATM call; digital call K = 130; arithmetic Asian ATM, 12 fixings; digital on the 12-fixing arithmetic average, K = 100"
   }
 }
