@@ -1,6 +1,6 @@
 # RiskEngine-CPP — Numerical-method, risk-measure and model risk report
 
-> **Status:** in progress. §2, §3, §5 and §6 are written (Phases 1, 2, 4 and 5). The other sections
+> **Status:** in progress. §2, §3 and §5 to §7 are written (Phases 1, 2 and 4 to 6). The other sections
 > are filled in as the phases of the plan land ([`riskengine_research.md`](riskengine_research.md) §12).
 >
 > **Editorial rules.** Every figure has a self-contained caption (*what it shows*, then *why it
@@ -79,7 +79,9 @@ configuration, flags, parameters, date. Committed results come from a Release bu
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release
 for e in fd_vcurve iv_roundtrip mc_convergence mc_coverage mc_efficiency qmc_convergence \
-         greeks_vs_h greeks_vs_n greeks_matrix; do build-release/experiments/$e; done
+         greeks_vs_h greeks_vs_n greeks_matrix var_straddle var_backtest stress_scenarios; do
+  build-release/experiments/$e
+done
 python3 tools/make_figures.py        # pip install -r tools/requirements.txt
 ```
 
@@ -466,7 +468,199 @@ finite differences with independent seeds.
 
 ## 7. Risk measures on non-linear positions
 
-*To be written in Phase 6.*
+One book is used throughout: **short one 30-day at-the-money straddle (call + put, K = 100),
+delta-hedged with the underlying** (`delta_hedged_short_straddle` in `risk/portfolio.hpp`), at
+S = 100, r = 5 %, q = 0, σ = 20 %. It is the textbook short-volatility position, the one a
+linear risk model gets most wrong: its delta is 0, its gamma −0.138, its vega −0.228 per vol point
+and its theta +0.11 per trading day, for a premium received of about 4.6. The horizon is one trading
+day, 1/252 of a year, for the diffusion and the time decay alike ([`conventions.md`](conventions.md)).
+VaR is at 99 % and ES at 97.5 % (the FRTB pair); the empirical estimators use the ⌈αN⌉-th order
+statistic and the mean of the tail from it upwards (`risk/var.hpp`). Every empirical figure carries
+a 95 % percentile-bootstrap interval (200 resamples).
+
+![VaR and ES of the hedged short straddle by method, with bootstrap intervals](figures/var_straddle.svg)
+
+*Figure 8 — One-day 99 % VaR and 97.5 % ES of the hedged short straddle, by method and set of risk
+factors, with 95 % bootstrap intervals for the empirical methods. **What it shows:** the linear
+method reports no risk at all, the quadratic one 59 % of the spot-only full revaluation, and adding
+the volatility factor or real (fat-tailed) history doubles the full-revaluation figure again. **Why
+it matters:** on an option book, the choice of method moves the 99 % VaR from 0 to 2.3 (half the
+premium received) before any parameter is estimated.* Source: [`data/results/var_straddle.csv`](../data/results/var_straddle.csv).
+
+| Method | Risk factors | VaR 99 % [95 % CI] | ES 97.5 % [95 % CI] |
+|---|---|---|---|
+| Delta-normal | spot | 0 | 0 |
+| Delta-gamma, normal | spot | 0.361 | 0.363 |
+| Delta-gamma, Cornish-Fisher | spot | 0.652 | — |
+| Full revaluation, Monte Carlo (10⁶ scenarios) | spot | 0.613 [0.609, 0.616] | 0.631 [0.627, 0.634] |
+| Full revaluation, Monte Carlo | spot + vol | 1.306 [1.301, 1.313] | 1.321 [1.317, 1.326] |
+| Historical, 2,520 days to 2026-09-22 | spot | 1.200 [1.025, 1.457] | 1.625 [1.193, 2.061] |
+| Historical | spot + vol | 2.274 [1.756, 2.581] | 2.555 [2.051, 3.041] |
+| Historical, returns rescaled to 20 % vol | spot | 0.967 [0.821, 1.180] | 1.329 [0.961, 1.700] |
+
+### 7.1 Delta-normal: blind by construction
+
+A delta-hedged book has no first-order exposure, so the delta-normal loss is identically zero and
+so are its VaR and ES, at every confidence level (`tests/test_portfolio_risk.cpp`, "Delta-normal
+VaR of a delta-hedged book is zero"). This is not an estimation error that more data would reduce:
+the method cannot represent the risk of the position. In the backtest of §7.4 it is exceeded on
+**40.2 %** of days, which is exactly the fraction of days on which the book lost money.
+
+**Remedy.** Never use a linear risk measure on a book whose Greeks beyond delta are material; a
+book that is flat in delta is the case where it matters most.
+
+### 7.2 Delta-gamma: the right moments, the wrong shape
+
+The second-order loss of the book over the horizon is L ≈ −Θ Δt − ½ Γ S² σ² Δt Z², with Z
+standard normal: with Γ < 0 and Θ > 0 it is a **shifted χ² with one degree of freedom**, scaled by
+c = ½ |Γ| S² σ² Δt = 0.110. Its mean is almost exactly zero (the theta earned pays for the expected
+gamma loss) but its skewness is 2√2 ≈ 2.8 and its excess kurtosis 12. The loss moments are
+computed exactly (`risk/approximations.hpp`; all four moments checked against 2 × 10⁶ simulated losses in
+`tests/test_portfolio_risk.cpp`); the trouble is what is done with them.
+
+- **Delta-gamma normal** matches the mean and variance and assumes a normal shape: VaR =
+  2.326 × c√2 = **0.361, 41 % below** the full-revaluation 0.613. The χ² quantile it should use is
+  c (χ²₁,₀.₉₉ − 1) = 5.63 c = 0.619, which reproduces the Monte Carlo value to 1 %: the whole gap is
+  the shape of the distribution, not the Taylor expansion.
+- **Delta-gamma Cornish-Fisher** corrects the quantile with the skewness and kurtosis: 0.652, now
+  **6 % above** the truth. The expansion is a series in the higher cumulants, and at a skewness of
+  2.8 and a kurtosis of 15 it is well outside the range where it converges; here it happens to err
+  on the conservative side.
+- The normal ES is useless for the same reason: 0.363 against 0.631, since a normal tail beyond the
+  VaR is thin by construction.
+
+**Remedy.** For a book dominated by gamma, use full revaluation; if an analytic figure is needed,
+use the exact quantile of the quadratic form (here a χ², in general a weighted sum of χ² computed
+by Fourier inversion), not a moment-matched normal.
+
+### 7.3 Full revaluation: risk factors, fat tails, ES and subadditivity
+
+Full revaluation reprices the book in every scenario (Black-Scholes at the shocked spot and vol,
+with one day of decay) and is exact up to the scenario generator. What remains is the choice of
+the generator, and it dominates the result:
+
+- **The volatility factor doubles the risk.** Monte Carlo with GBM spot moves only gives 0.613.
+  Adding a daily implied-vol shock calibrated on the last ten years of VIX changes (standard
+  deviation 1.97 vol points, correlation −0.75 with the NASDAQ return) gives **1.306**: a short
+  straddle is short vega as much as short gamma, and the vol rises precisely when the spot falls. A
+  spot-only VaR, however accurate, measures half of the risk.
+- **History is fatter-tailed than GBM.** Historical simulation on the NASDAQ over the same ten
+  years gives 1.200 for spot alone. Part of the gap is the level of vol (22.2 % realized against the
+  20 % of the other methods); rescaling the returns to 20 % leaves **0.967, still 58 % above the
+  GBM figure**, and that remainder is the shape of the tails. With the observed vol changes as well,
+  historical VaR reaches 2.274.
+- **ES sees the tail that VaR ignores.** Under GBM the 97.5 % ES exceeds the 99 % VaR by 3 % (for a
+  normal the two agree within 1 %); on history, by 35 % (1.625 against 1.200). The ratio ES/VaR is itself a
+  tail diagnostic.
+- **Sampling error is not uniform.** With 10⁶ Monte Carlo scenarios the bootstrap interval is
+  ±0.6 %; the 1 % tail of 2,520 historical days is 25 observations, and the interval is −15 % to
+  +21 % for the VaR and ±27 % for the ES. A historical ES is a noisy number and must be reported
+  with its interval.
+
+**Subadditivity.** ES is a coherent risk measure and VaR is not. The engine checks the classic
+counterexample (Artzner et al. 1999) in `tests/test_var.cpp`: two independent bonds each losing 100
+with probability 4 % have a 95 % VaR of 0 each, but 100 together. Diversification increases VaR,
+while the ES of the pair (103.2) stays below the sum of the stand-alone ES (79.8 + 79.8).
+
+**Remedy.** Revalue fully, include every risk factor to which the book has a first-order Greek
+(here vol, not only spot), prefer ES with a bootstrap interval, and compare model scenarios with
+historical ones: their disagreement measures the model risk of the generator.
+
+### 7.4 Backtesting on thirty-four years of data
+
+Every trading day t from 24 December 1991 to 21 September 2026 (8,744 days), a fresh book is set up:
+short a 30-day ATM straddle, delta-hedged, spot normalized to 100, vol = VIX_t, rate = 3-month
+T-bill as of t. Its one-day 99 % VaR is forecast by four methods, and the realized loss is the full
+revaluation at t + 1 with the NASDAQ Composite move, VIX_{t+1}, the new rate and one day of decay.
+Monte Carlo uses GBM at the day's implied vol (spot only, 20,000 scenarios, the same every day);
+historical simulation uses the previous 500 days of NASDAQ returns and VIX changes. The data are
+frozen FRED series with checksums (`data/raw/manifest.json`, [`conventions.md`](conventions.md)).
+The tests are Kupiec's proportion of failures (POF), Christoffersen's independence test and the
+Basel traffic light on non-overlapping 250-day windows (`risk/backtest.hpp`, checked against
+independent reference values in `tests/test_backtest.cpp`). 87.4 exceptions are expected.
+
+| Method | Mean VaR | Exceptions | Rate | Kupiec p | Christoffersen p | Red-zone windows | 2008 / 2020 crisis |
+|---|---|---|---|---|---|---|---|
+| Delta-normal | 0 | 3,511 | 40.2 % | 0 | 0.071 | 34 / 34 | 62 / 24 |
+| Delta-gamma normal | 0.350 | 1,109 | 12.7 % | 0 | 0.12 | 34 / 34 | 28 / 13 |
+| Monte Carlo full revaluation (spot) | 0.598 | 588 | 6.7 % | 5 × 10⁻²⁷⁸ | 0.16 | 29 / 34 | 17 / 9 |
+| Historical full revaluation (spot + vol) | 1.783 | 118 | 1.35 % | 0.0018 | 3 × 10⁻⁵ | 2 / 34 | 14 / 7 |
+
+Crisis windows: 1 September 2008 to 31 March 2009 and 15 February to 30 April 2020. Source:
+[`data/results/var_backtest_summary.csv`](../data/results/var_backtest_summary.csv); daily series in
+[`data/results/var_backtest.csv`](../data/results/var_backtest.csv).
+
+![Realized loss against the Monte Carlo and historical VaR in 2008 and 2020](figures/var_backtest.svg)
+
+*Figure 9 — Realized one-day loss of the fresh hedged short straddle against its Monte Carlo
+(spot) and historical (spot + vol) 99 % VaR, through the 2008 crisis and the 2020 pandemic; dots
+mark the exceptions of the historical VaR. **What it shows:** the Monte Carlo VaR reacts at once to
+the implied vol but misses the vol spikes; the historical VaR is high on average but rises only
+after a crisis has entered its window, and stays high for two years after it. **Why it matters:**
+passing a coverage test on average does not protect against the days that matter.* Source:
+[`data/results/var_backtest.csv`](../data/results/var_backtest.csv).
+
+- **The model-based methods fail coverage outright.** Delta-normal and delta-gamma are in the red
+  zone every single year. Monte Carlo on spot alone is exceeded 6.7 % of the time, almost seven
+  times the nominal rate, and **95 % of its exceptions fall on days when the VIX rose**, against
+  46 % of all days: the missing risk is the vega of §7.3, not the gamma, which it prices exactly.
+  Its exceptions are nevertheless close to independent (p = 0.16), because the forecast follows
+  the implied vol day by day.
+- **Historical simulation passes on average and fails in time.** It is exceeded 118 times against
+  87 expected: only 2 of 34 years are red, but Kupiec still rejects at the 1 % level, and
+  Christoffersen rejects independence strongly (p = 3 × 10⁻⁵). The exceptions cluster: 14 in the
+  seven months of the 2008 crisis and 7 in ten weeks of 2020, when a well-calibrated 99 % VaR would
+  have given one or two. A 500-day window carries a crisis only once it has happened, and carries
+  it for two years afterwards (Figure 9, 2009 and late 2020): the average VaR is three times the
+  Monte Carlo one, at the wrong times.
+
+**Remedy.** Backtest coverage *and* independence; a model that passes Kupiec but fails
+Christoffersen is late, not right. Add the vol factor to model-based VaR, and weight recent history
+more (filtered historical simulation, volatility-scaled returns) so that a historical VaR reacts at
+the start of a crisis rather than after it.
+
+### 7.5 Stress testing
+
+Historical crises ([`riskengine_research.md`](riskengine_research.md) §9.2) are replayed on
+today's book of §7.1–7.3 (σ = 20 %, r = 5 %): each is a joint close-to-close move of the NASDAQ
+Composite, of implied vol (VIX; VXO for 1987, before the VIX existed) and of the 3-month T-bill
+yield, with the decay of its trading days. The loss is also computed with the spot move alone and
+with the vol and rate moves alone.
+
+| Scenario | Dates (close to close) | NASDAQ | Implied vol | Loss | Spot only | Vol and rate only |
+|---|---|---|---|---|---|---|
+| Black Monday | 16–19 Oct 1987 | −11.4 % | +113.8 pts | **25.6** | 7.4 | 25.1 |
+| TARP vote | 26–29 Sep 2008 | −9.1 % | +12.0 pts | **6.2** | 5.1 | 2.6 |
+| Week to 10 Oct 2008 | 3–10 Oct 2008 | −15.3 % | +24.8 pts | **12.3** | 11.6 | 4.3 |
+| Volmageddon | 2–5 Feb 2018 | −3.8 % | +20.0 pts | **4.9** | 0.9 | 4.3 |
+| COVID Monday | 13–16 Mar 2020 | −12.3 % | +24.9 pts | **10.2** | 8.4 | 5.4 |
+| Week to 16 Mar 2020 | 6–16 Mar 2020 | −19.5 % | +40.7 pts | **17.0** | 16.2 | 7.1 |
+
+NASDAQ moves are simple returns (the CSV stores log-returns). Source:
+[`data/results/stress_scenarios.csv`](../data/results/stress_scenarios.csv).
+
+![Stress losses of the hedged short straddle, joint and by factor](figures/stress_scenarios.svg)
+
+*Figure 10 — Loss of the hedged short straddle in six historical crises, for the joint move and for
+the spot and vol moves alone. **What it shows:** a single day can cost from one to five and a half
+times the premium received, and the factor that drives the loss changes from crisis to crisis.
+**Why it matters:** these losses are 2 to 11 times the historical 99 % VaR and 4 to 20 times the
+Monte Carlo one; no one-day VaR, however well backtested, describes them.* Source:
+[`data/results/stress_scenarios.csv`](../data/results/stress_scenarios.csv).
+
+- **The loss is not always where a spot-only model looks.** Black Monday is almost entirely a vol
+  loss (25.1 of 25.6), because the VXO more than doubled; Volmageddon, a 3.8 % fall, cost 4.9, of
+  which the spot move alone explains 0.9. In the long crashes of 2008 and 2020 the spot move
+  dominates.
+- **The factors do not add up.** Spot-only plus vol-only differs from the joint loss (7.4 + 25.1
+  against 25.6 in 1987; 0.9 + 4.3 against 4.9 in 2018): the vega of an option depends on the spot
+  and its gamma on the vol, so scenarios must be applied jointly, never summed factor by factor.
+- **Stress losses dwarf VaR.** The 1987 loss is 11 times the historical spot-and-vol VaR of §7.3
+  and 20 times the Monte Carlo one; the spot move of 1987 alone is 12 times the spot-only Monte
+  Carlo VaR.
+
+**Remedy.** Complement VaR and ES with joint historical stress scenarios that shock every risk
+factor of the book, and read the factor split to see which Greek the loss comes from.
 
 ## 8. Model risk beyond GBM
 
