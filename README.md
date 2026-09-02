@@ -27,12 +27,13 @@ Full methodology, formulas, and verified reference numbers: [`docs/riskengine_re
 
 ## Status
 
-Phases 1, 2 and 4 of the plan ([`docs/riskengine_research.md`](docs/riskengine_research.md) §12) are done. The report [`docs/model_risk_report.md`](docs/model_risk_report.md) has §2 (reproducibility protocol), §3 (analytic ground truth) and §5 (Monte Carlo: convergence, variance reduction, randomized QMC).
+Phases 1, 2, 4 and 5 of the plan ([`docs/riskengine_research.md`](docs/riskengine_research.md) §12) are done. The report [`docs/model_risk_report.md`](docs/model_risk_report.md) has §2 (reproducibility protocol), §3 (analytic ground truth), §5 (Monte Carlo) and §6 (Greeks under noise, the flagship section).
 
-- **Phase 1, analytic ground truth:** Black-Scholes-Merton with continuous dividend yield, closed-form Greeks, bracketed implied-vol solver, explicit T → 0 / σ → 0 branches, digital and discrete geometric-Asian closed forms, [`docs/conventions.md`](docs/conventions.md). The report shows why an in-the-money quote cannot pin its implied vol and the finite-difference V-curve.
-- **Phase 2, stochastic infrastructure:** Philox 4×32-10 (checked against Random123), AS241 inverse normal, Welford/Chan accumulators, fixed-block reduction that is bit-identical for any thread count and across GCC/Clang, and the experiment harness (`experiments/` → `data/results/*.csv` + `.meta.json` → `docs/figures/*.svg`).
-- **Phase 4, Monte Carlo:** a generic engine over the `PathModel` concept (GBM with exact steps), terminal and path payoffs, antithetic variates, control variates with an independent pilot estimate of β, and randomized QMC (Sobol with Joe-Kuo directions, hash-based Owen scrambling, Brownian bridge). Standard errors are calibrated (95 % intervals cover 94.5–95.7 % of the time); variance reduction reaches 1,500× and QMC a 344× smaller error on an ATM call, and the report shows where each technique fails (antithetic on a straddle, S_T control far out of the money, QMC on a 12-D digital).
-- **Next:** Phase 5, the Greeks-under-noise study (finite differences with and without common random numbers, pathwise, likelihood ratio, on a call and a digital).
+- **Phase 1, analytic ground truth:** Black-Scholes-Merton with continuous dividend yield, closed-form Greeks, bracketed implied-vol solver, digital and discrete geometric-Asian closed forms, [`docs/conventions.md`](docs/conventions.md). The report shows why an in-the-money quote cannot pin its implied vol and the finite-difference V-curve.
+- **Phase 2, stochastic infrastructure:** Philox 4×32-10, AS241 inverse normal, Welford/Chan accumulators, fixed-block reduction that is bit-identical for any thread count and across GCC/Clang, and the experiment harness (`experiments/` → `data/results/*.csv` + `.meta.json` → `docs/figures/*.svg`).
+- **Phase 4, Monte Carlo:** a generic engine over the `PathModel` concept, antithetic and control variates, randomized QMC (Sobol, Owen scrambling, Brownian bridge). Variance reduction reaches 1,500× and QMC a 344× smaller error on an ATM call; the report shows where each technique fails.
+- **Phase 5, Greeks under noise:** finite differences (independent seeds, common random numbers), pathwise (checked by forward automatic differentiation), likelihood ratio and mixed estimators, on a call and a digital. Measured convergence rates match theory (e.g. −0.40 against −2/5 for the CRN digital delta); the pathwise digital delta converges, with zero standard error, to 0 instead of 0.0188; the report ends with a payoff × regime × Greek recommendation matrix.
+- **Next:** Phase 6, risk measures on non-linear positions (delta-normal VaR blind to a short straddle, delta-gamma, full revaluation, Expected Shortfall, backtesting).
 
 ## Building
 
@@ -49,7 +50,8 @@ To regenerate the report's results and figures (Release build of a clean tree; P
 ```
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release
-for e in fd_vcurve iv_roundtrip mc_convergence mc_coverage mc_efficiency qmc_convergence; do build-release/experiments/$e; done
+for e in fd_vcurve iv_roundtrip mc_convergence mc_coverage mc_efficiency qmc_convergence \
+         greeks_vs_h greeks_vs_n greeks_matrix; do build-release/experiments/$e; done
 python3 tools/make_figures.py
 ```
 
