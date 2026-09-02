@@ -1,8 +1,9 @@
 #pragma once
 
-#include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <stdexcept>
+#include <string>
 
 #include "riskengine/concepts.hpp"
 #include "riskengine/core/simulation.hpp"
@@ -55,7 +56,8 @@ struct GreekConfig {
 };
 
 // Pathwise and PathwiseDual estimate delta only (a kinked payoff has no pathwise second derivative);
-// Mixed estimates gamma only.
+// Mixed estimates gamma only. mc_greek rejects any other combination with an exception, in every
+// build, rather than return a Greek under the wrong name.
 inline bool supports(GreekMethod method, Greek greek) {
     if (method == GreekMethod::Pathwise || method == GreekMethod::PathwiseDual) return greek == Greek::Delta;
     if (method == GreekMethod::Mixed) return greek == Greek::Gamma;
@@ -72,7 +74,8 @@ concept DifferentiableTerminalPayoff = TerminalPayoff<F> && requires(const F& f,
 template <DifferentiableTerminalPayoff Payoff>
 Estimate mc_greek(Greek greek, GreekMethod method, const Payoff& payoff, Maturity maturity, const MarketState& m,
                   SeedKey key, const GreekConfig& config) {
-    assert(supports(method, greek));
+    if (!supports(method, greek))
+        throw std::invalid_argument(std::string(to_string(method)) + " does not estimate this Greek");
     const double s = m.spot.value, r = m.rate.value, q = m.div.value, sigma = m.vol.value, t = maturity.value;
     const double discount = std::exp(-r * t);
     const double sst = sigma * std::sqrt(t);

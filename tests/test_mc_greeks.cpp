@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+#include <stdexcept>
+#include <utility>
 
 #include "riskengine/methods/analytic/digital.hpp"
 #include "riskengine/methods/montecarlo/greeks.hpp"
@@ -118,4 +120,11 @@ TEST_CASE("Greek estimates are thread-invariant", "[mc_greeks][determinism]") {
     }
     CHECK(!supports(GreekMethod::Pathwise, Greek::Gamma));
     CHECK(!supports(GreekMethod::Mixed, Greek::Delta));
+}
+
+TEST_CASE("Unsupported estimator / Greek pairs are rejected in every build", "[mc_greeks]") {
+    const GreekConfig cfg{.paths = 100};
+    for (auto [greek, method] : {std::pair{Greek::Gamma, GreekMethod::Pathwise}, std::pair{Greek::Gamma, GreekMethod::PathwiseDual},
+                                 std::pair{Greek::Delta, GreekMethod::Mixed}})
+        CHECK_THROWS_AS(mc_greek(greek, method, kCallPayoff, kT, kMarket, SeedKey{11}, cfg), std::invalid_argument);
 }
