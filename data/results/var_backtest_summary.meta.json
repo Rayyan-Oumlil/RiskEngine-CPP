@@ -1,0 +1,16 @@
+{
+  "experiment": "var_backtest_summary",
+  "git_commit": "cee5caebe62fbb732854c93e77fc4f249e82c055",
+  "git_dirty": false,
+  "compiler": "GNU 13.3.0",
+  "build_type": "Release",
+  "cxx_flags": "-O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off -fno-builtin-exp -fno-builtin-log -fno-builtin-erfc -fno-builtin-pow",
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "hardware_threads": 4,
+  "created_utc": "2026-09-24T03:03:00Z",
+  "parameters": {
+    "source": "var_backtest (same run)",
+    "period": "1991-12-24 .. 2026-09-21",
+    "crisis_windows": "2008-09-01 .. 2009-03-31 and 2020-02-15 .. 2020-04-30"
+  }
+}
