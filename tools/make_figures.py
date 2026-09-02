@@ -195,6 +195,78 @@ def qmc_convergence(path, meta, out):
     plt.close(fig)
 
 
+# Greeks estimators, in the fixed categorical order used by every Greeks figure.
+GREEK_METHODS = [("fd_independent", "FD, independent seeds"), ("fd_crn", "FD + CRN"), ("pathwise", "pathwise"),
+                 ("likelihood_ratio", "likelihood ratio"), ("mixed", "mixed (LR on pathwise)")]
+GREEK_COLORS = SERIES + ["#1baf7a", "#eda100", "#e87ba4"]
+GREEK_PANELS = [("call", "delta", "Call delta"), ("call", "gamma", "Call gamma"),
+                ("digital", "delta", "Digital delta"), ("digital", "gamma", "Digital gamma")]
+
+
+def greeks_vs_h(path, meta, out):
+    rows = read_rows(path)
+    fig, axes = plt.subplots(2, 2, figsize=(7.4, 6.2))
+    for ax, (payoff, greek, title) in zip(axes.flat, GREEK_PANELS):
+        cell = [r for r in rows if r["payoff"] == payoff and r["greek"] == greek]
+        exact = abs(float(cell[0]["exact"]))
+        for (method, label), color in zip(GREEK_METHODS, GREEK_COLORS):
+            pts = [(float(r["h"]), float(r["rmse"]) / exact) for r in cell if r["method"] == method]
+            if not pts:
+                continue
+            if method.startswith("fd_"):
+                h, e = zip(*pts)
+                ax.loglog(h, e, color=color, linewidth=2, marker="o", markersize=3, label=label)
+            else:  # h-independent reference level
+                ax.axhline(pts[0][1], color=color, linewidth=1.5, linestyle=(0, (4, 3)), label=label)
+                ax.annotate(label.split(" (")[0], (0.0, pts[0][1]), xycoords=("axes fraction", "data"),
+                            xytext=(4, 3), textcoords="offset points", ha="left", color=INK_SECONDARY, fontsize=8)
+        ax.set_title(title, loc="left", fontsize=10)
+    for ax in axes[1]:
+        ax.set_xlabel("relative bump h")
+    for ax in axes[:, 0]:
+        ax.set_ylabel("relative RMSE of one estimate")
+    handles, labels = axes[1, 1].get_legend_handles_labels()
+    handles2, labels2 = axes[0, 0].get_legend_handles_labels()
+    seen = dict(zip(labels2, handles2)) | dict(zip(labels, handles))
+    fig.legend(seen.values(), seen.keys(), loc="upper center", ncol=3, frameon=False, fontsize=9)
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    fig.savefig(out, metadata={"Date": None})
+    plt.close(fig)
+
+
+def greeks_vs_n(path, meta, out):
+    rows = read_rows(path)
+    fig, axes = plt.subplots(2, 2, figsize=(7.4, 6.2))
+    for ax, (payoff, greek, title) in zip(axes.flat, GREEK_PANELS):
+        cell = [r for r in rows if r["payoff"] == payoff and r["greek"] == greek]
+        exact = abs(float(cell[0]["exact"]))
+        for (method, label), color in zip(GREEK_METHODS, GREEK_COLORS):
+            pts = [(float(r["paths"]), float(r["rmse"]) / exact) for r in cell if r["method"] == method]
+            if not pts:
+                continue
+            n, e = zip(*pts)
+            tail = [(x, y) for x, y in pts if x >= 2 ** 10]
+            slope = log_slope([x for x, _ in tail], [y for _, y in tail])
+            ax.loglog(n, e, color=color, linewidth=2, marker="o", markersize=3, label=label)
+            ax.annotate(f"{slope:+.2f}", (n[-1], e[-1]), xytext=(4, 0), textcoords="offset points", va="center",
+                        color=INK_SECONDARY, fontsize=8)
+        ax.set_title(title, loc="left", fontsize=10)
+        ax.set_xlim(right=2 ** 18 * 3)
+    for ax in axes[1]:
+        ax.set_xlabel("paths N")
+    for ax in axes[:, 0]:
+        ax.set_ylabel("relative RMSE (best h for FD)")
+    handles, labels = axes[1, 1].get_legend_handles_labels()
+    handles2, labels2 = axes[0, 0].get_legend_handles_labels()
+    seen = dict(zip(labels2, handles2)) | dict(zip(labels, handles))
+    fig.legend(seen.values(), seen.keys(), loc="upper center", ncol=3, frameon=False, fontsize=9)
+    fig.suptitle("Labels: fitted slope in N from N = 2^10 (unbiased and CRN on a call: −0.5)", y=0.025,
+                 fontsize=9, color=MUTED)
+    fig.tight_layout(rect=(0, 0.02, 1, 0.92))
+    fig.savefig(out, metadata={"Date": None})
+    plt.close(fig)
+
+
 # Each renderer takes (csv path, metadata dict, output path). Experiments without an entry (tables)
 # are reported directly from their CSV.
 FIGURES = {
@@ -203,6 +275,8 @@ FIGURES = {
     "mc_convergence": mc_convergence,
     "mc_coverage": mc_coverage,
     "qmc_convergence": qmc_convergence,
+    "greeks_vs_h": greeks_vs_h,
+    "greeks_vs_n": greeks_vs_n,
 }
 
 
