@@ -20,6 +20,7 @@ add_executable(riskengine_tests
     test_mc_greeks.cpp
     test_var.cpp
     test_time_series.cpp
+    test_portfolio_risk.cpp
 )
 target_link_libraries(riskengine_tests PRIVATE riskengine Catch2::Catch2WithMain)
 target_compile_definitions(riskengine_tests PRIVATE RISKENGINE_DATA_DIR="${PROJECT_SOURCE_DIR}/data/raw")
