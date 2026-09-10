@@ -23,6 +23,7 @@ struct BsTerms {
     double n_d2, n_md2;   // N(d2), N(-d2)
     double pdf_d1;        // n(d1)
     double pdf_d2;        // n(d2)
+    double d1;            // 0 in the degenerate case
     double sigma_sqrt_t;
     bool degenerate;      // sigma * sqrt(T) == 0: no diffusion left, price is discounted forward intrinsic
 };
@@ -55,6 +56,7 @@ inline BsTerms bs_terms(double s, double k, double r, double q, double sigma, do
     b.n_md2 = norm_cdf(-d2);
     b.pdf_d1 = norm_pdf(d1);
     b.pdf_d2 = norm_pdf(d2);
+    b.d1 = d1;
     return b;
 }
 

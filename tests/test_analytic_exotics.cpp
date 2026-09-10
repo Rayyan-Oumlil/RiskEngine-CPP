@@ -10,23 +10,24 @@ using namespace riskengine;
 using Catch::Matchers::WithinRel;
 
 TEST_CASE("Digital matches high-precision reference values to 1e-9", "[digital][reference]") {
-    // tools/bs_reference.py: mpmath at 50 digits, delta as a numerical derivative of the price.
+    // tools/bs_reference.py: mpmath at 50 digits, delta and gamma as numerical derivatives of the price.
     struct Ref {
         double k, r, q, sigma, t;
         OptionType type;
-        double price, delta;
+        double price, delta, gamma;
     };
     const Ref refs[] = {
-        {100, 0.05, 0.0, 0.2, 1.0, OptionType::Call, 0.5323248154537634, 0.018762017345846894},
-        {100, 0.05, 0.0, 0.2, 1.0, OptionType::Put, 0.41890460904695061, -0.018762017345846894},
-        {95, 0.03, 0.02, 0.25, 0.5, OptionType::Call, 0.58217685761318141, 0.021651006619506537},
-        {95, 0.03, 0.02, 0.25, 0.5, OptionType::Put, 0.40293508198988125, -0.021651006619506537},
+        {100, 0.05, 0.0, 0.2, 1.0, OptionType::Call, 0.5323248154537634, 0.018762017345846894, -0.00032833530355232064},
+        {100, 0.05, 0.0, 0.2, 1.0, OptionType::Put, 0.41890460904695061, -0.018762017345846894, 0.00032833530355232064},
+        {95, 0.03, 0.02, 0.25, 0.5, OptionType::Call, 0.58217685761318141, 0.021651006619506537, -0.00049827310971151245},
+        {95, 0.03, 0.02, 0.25, 0.5, OptionType::Put, 0.40293508198988125, -0.021651006619506537, 0.00049827310971151245},
     };
     for (const auto& ref : refs) {
         const VanillaOption o{Strike{ref.k}, Maturity{ref.t}, ref.type};
         const MarketState m{Spot{100}, Rate{ref.r}, Rate{ref.q}, Vol{ref.sigma}};
         CHECK_THAT(digital_price(o, m), WithinRel(ref.price, 1e-9));
         CHECK_THAT(digital_delta(o, m), WithinRel(ref.delta, 1e-9));
+        CHECK_THAT(digital_gamma(o, m), WithinRel(ref.gamma, 1e-9));
     }
 }
 
@@ -49,6 +50,7 @@ TEST_CASE("Digital call + put pays the discounted unit, delta matches finite dif
     const MarketState m{Spot{100}, Rate{r}, Rate{q}, Vol{0.3}};
     CHECK(digital_price(expired, m) == 1.0);
     CHECK(digital_delta(expired, m) == 0.0);
+    CHECK(digital_gamma(expired, m) == 0.0);
 }
 
 TEST_CASE("Geometric Asian with one fixing is the European option", "[asian]") {

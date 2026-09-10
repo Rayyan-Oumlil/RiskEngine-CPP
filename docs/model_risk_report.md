@@ -1,7 +1,7 @@
 # RiskEngine-CPP — Numerical-method, risk-measure and model risk report
 
-> **Status:** in progress. §2, §3 and §5 are written (Phases 1, 2 and 4). The other sections are
-> filled in as the phases of the plan land ([`riskengine_research.md`](riskengine_research.md) §12).
+> **Status:** in progress. §2, §3, §5 and §6 are written (Phases 1, 2, 4 and 5). The other sections
+> are filled in as the phases of the plan land ([`riskengine_research.md`](riskengine_research.md) §12).
 >
 > **Editorial rules.** Every figure has a self-contained caption (*what it shows*, then *why it
 > matters*). Every number points to the CSV or test that produced it. Every stochastic estimate is
@@ -78,7 +78,8 @@ configuration, flags, parameters, date. Committed results come from a Release bu
 ```
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release
-for e in fd_vcurve iv_roundtrip mc_convergence mc_coverage mc_efficiency qmc_convergence; do build-release/experiments/$e; done
+for e in fd_vcurve iv_roundtrip mc_convergence mc_coverage mc_efficiency qmc_convergence \
+         greeks_vs_h greeks_vs_n greeks_matrix; do build-release/experiments/$e; done
 python3 tools/make_figures.py        # pip install -r tools/requirements.txt
 ```
 
@@ -341,7 +342,127 @@ a control variate.
 
 ## 6. Greek estimation under noise *(flagship section)*
 
-*To be written in Phase 5.*
+A risk system needs Greeks from Monte Carlo prices, and every way of getting them trades bias,
+variance and cost differently. Five estimators are compared (`methods/montecarlo/greeks.hpp`), on a
+call (continuous, with a kink) and a cash-or-nothing digital (a jump), against the closed forms:
+
+- **FD, independent seeds:** central differences of prices simulated with independent normals at
+  S(1 ± h) (and S for gamma).
+- **FD + CRN:** the same bumps on the same normal (common random numbers).
+- **Pathwise:** the derivative of the discounted payoff along each path, e^{−rT} f′(S_T) S_T / S.
+  An automatic-differentiation version (`Dual` numbers) reproduces it to 10⁻¹⁴.
+- **Likelihood ratio (LR):** differentiates the density instead of the payoff: e^{−rT} f(S_T) × score.
+- **Mixed (gamma only):** the likelihood ratio applied to the pathwise delta.
+
+Every estimate carries an honest standard error, since each is an average of i.i.d. per-path terms.
+Errors below are the RMSE of *one* estimate, √(bias² + spread²), measured over 32 independent
+replications and relative to the exact Greek.
+
+### 6.1 Why naive finite differences fail: the bias/variance trade-off
+
+![Relative RMSE of finite-difference Greeks against the bump, with and without common random numbers](figures/greeks_vs_h.svg)
+
+*Figure 6 — Relative RMSE of one estimate (N = 2¹⁶ paths) against the relative bump h, for finite
+differences with independent seeds and with common random numbers; the unbiased estimators are
+drawn as h-independent levels. **What it shows:** with independent seeds the error explodes as the
+bump shrinks, as h⁻¹ for delta and h⁻² for gamma; common random numbers remove the explosion for
+the call delta only. **Why it matters:** the bump that is safe on an analytic pricer (§3.2) is
+catastrophic on a Monte Carlo one.* Source: [`data/results/greeks_vs_h.csv`](../data/results/greeks_vs_h.csv).
+
+With independent seeds, the up and down prices each carry their own sampling noise, and the
+difference divides it by 2hS: the variance of the delta estimator is O(1/(N h²)), of the gamma
+estimator O(1/(N h⁴)). At h = 10⁻⁴, a bump that is harmless on the analytic pricer of §3.2, the
+Monte Carlo delta is **6.4 times** its true value in error and the gamma **80,000 times**. Balancing
+the h² bias against this variance gives h* ∝ N^{−1/6} and an RMSE falling only as N^{−1/3}
+(measured −0.36, Figure 7). Even at its best bump (h ≈ 6 %), the independent-seed delta is 1.3 %
+wrong at N = 2¹⁶, nearly four times the error of the pathwise estimator on the same paths.
+
+**Remedy.** Never difference two independently simulated prices. At the very least use common
+random numbers, and prefer an unbiased estimator (§6.3).
+
+### 6.2 Common random numbers: what they fix and what they do not
+
+With the same normal for every bump, a Lipschitz payoff (the call) gives per-path differences that
+stay bounded as h → 0: the variance is O(1/N) whatever h, and the call delta is flat at 0.35 % for
+every h ≤ 1 %. As h → 0, the CRN difference of each path *becomes* the pathwise derivative: the
+two estimators are indistinguishable in Figures 6 and 7.
+
+**Where CRN fail.** A second difference of a kinked payoff (the call gamma), or a first difference
+of a jump (the digital delta), is non-zero only on the paths that end within about hS of the strike,
+a fraction O(h) of them, where it is of size 1/h. The variance is then O(1/(N h)): the error grows
+again as h shrinks (26 % for the call gamma and 21 % for the digital delta at h = 10⁻⁴), and the
+best bump only achieves an RMSE falling as N^{−2/5}. For the digital gamma, a second difference of
+a jump, the variance is O(1/(N h³)) and even with CRN the error is 2,400 times the gamma at
+h = 10⁻⁴ and still 12 % at the best bump.
+
+| Estimator (best bump for FD) | Measured RMSE slope in N | Theory |
+|---|---|---|
+| Call delta, FD independent | −0.36 | −1/3 |
+| Call delta, FD + CRN; pathwise | −0.52; −0.53 | −1/2 |
+| Call gamma, FD independent | −0.27 | −1/4 |
+| Call gamma, FD + CRN | −0.43 | −2/5 |
+| Digital delta, FD independent | −0.33 | −1/3 |
+| Digital delta, FD + CRN | −0.40 | −2/5 |
+| Digital gamma, FD + CRN | −0.26 | −2/7 |
+| Likelihood ratio, mixed (where valid) | −0.46 to −0.51 | −1/2 |
+
+Source: [`data/results/greeks_vs_n.csv`](../data/results/greeks_vs_n.csv) (slopes fitted from
+N = 2¹⁰ to 2¹⁸).
+
+### 6.3 Pathwise, likelihood ratio and mixed estimators; the silent failure on the digital
+
+![Relative RMSE of every Greek estimator against the number of paths](figures/greeks_vs_n.svg)
+
+*Figure 7 — Relative RMSE of one estimate against N, with the best bump at each N for finite
+differences; each line is labeled with its fitted slope. **What it shows:** the unbiased estimators
+converge at N^{−1/2}, finite differences more slowly, and two estimators do not converge at all on
+the digital: the pathwise delta and the mixed gamma sit at exactly 100 % error for every N.
+**Why it matters:** those two failures come with a standard error of zero, so nothing in their
+output warns the user.* Source: [`data/results/greeks_vs_n.csv`](../data/results/greeks_vs_n.csv).
+
+**Pathwise** is the best delta for the call: unbiased, O(1/N) variance, one path per sample.
+**The silent failure.** For a digital, f′ = 0 almost everywhere: every path contributes exactly 0,
+so the pathwise delta is **0 with a standard error of 0**, while the true delta is 0.0188. The
+estimator converges, with complete confidence, to the wrong answer. The mixed gamma inherits the
+same flaw on the digital. The jump carries the whole derivative, and a pathwise derivative cannot
+see a jump.
+
+**Likelihood ratio** never differentiates the payoff, so it is unbiased for the digital too. It has
+the best digital delta (0.57 %) and the only usable digital gamma (2.9 %). Its price is a higher
+variance on smooth payoffs: on the call gamma, LR is 3.7 % wrong where the **mixed** estimator,
+which differentiates the smooth part pathwise and only the kink by likelihood ratio, is 0.82 %
+wrong, a 20-fold gain in efficiency at the same cost. The LR score grows as the maturity shrinks;
+in relative terms the digital gamma degrades from 2.9 % at one year to 22 % at one week, while the
+ATM call delta does not, because its payoff shrinks with √T as well.
+
+### 6.4 Recommendation matrix
+
+N = 2¹⁶ paths per estimate. Finite differences use a fixed relative bump of 1 %, a common desk
+convention; "best" is the highest efficiency 1 / (MSE × time) in the row. Errors are relative RMSE.
+
+| Greek | Regime | Best (efficiency) | Its error | FD + CRN, h = 1 % | FD independent, h = 1 % | Silent failure |
+|---|---|---|---|---|---|---|
+| call delta | ATM, T = 1 | pathwise | 0.35 % | 0.36 % | 6.4 % | — |
+| call delta | K = 150, T = 1 | pathwise | 2.8 % | 2.7 % | 21 % | — |
+| call delta | ATM, T = 1 week | pathwise | 0.35 % | 0.38 % | 0.94 % | — |
+| call gamma | ATM, T = 1 | mixed | 0.82 % | 2.2 % | 797 % | — |
+| call gamma | K = 150, T = 1 | mixed | 3.0 % | 6.6 % | 629 % | — |
+| call gamma | ATM, T = 1 week | mixed | 0.59 % | 1.3 % | 12 % | — |
+| digital delta | ATM, T = 1 | likelihood ratio | 0.57 % | 2.0 % | 6.4 % | pathwise (100 %) |
+| digital delta | K = 150, T = 1 | likelihood ratio | 2.9 % | 5.3 % | 16 % | pathwise (100 %) |
+| digital delta | ATM, T = 1 week | likelihood ratio | 0.56 % | 2.2 % | 2.3 % | pathwise (100 %) |
+| digital gamma | ATM, T = 1 | likelihood ratio | 2.9 % | 229 % | 1,272 % | mixed (100 %) |
+| digital gamma | K = 150, T = 1 | likelihood ratio | 3.2 % | 99 % | 684 % | mixed (100 %) |
+| digital gamma | ATM, T = 1 week | likelihood ratio | 22 % | 82 % | 152 % | mixed (100 %) |
+
+Source: [`data/results/greeks_matrix.csv`](../data/results/greeks_matrix.csv) (with bias, spread,
+time per estimate and efficiency for every estimator; timings on the recorded CPU).
+
+**Decision rule.** For a payoff that is Lipschitz in the underlying, use the pathwise delta and the
+mixed gamma; finite differences with common random numbers are an acceptable delta (they tend to
+pathwise), never a gamma. For a payoff with a jump, use the likelihood ratio for every Greek and
+never a pathwise-based estimator, whose zero standard error is not evidence of accuracy. Never use
+finite differences with independent seeds.
 
 ## 7. Risk measures on non-linear positions
 
