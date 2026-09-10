@@ -305,7 +305,7 @@ A **recommendation matrix** payoff × regime × estimator, and an operational de
 
 Position: **short ATM straddle, delta-hedged**. Delta ≈ 0, so **delta-normal VaR ≈ 0**, while the real loss ½·Γ·ΔS² is large and asymmetric.
 
-**Preview ✅** (30-day straddle, σ = 20 %, r = 5 %, 1-day horizon, 10⁶ scenarios, per straddle): delta-normal VaR = **0**; 99 % full-revaluation VaR ≈ **0.64**; 97.5 % ES ≈ **0.66**. To be regenerated and extended in Phase 6.
+**Preview ✅** (30-day straddle, σ = 20 %, r = 5 %, 1-day horizon, 10⁶ scenarios, per straddle): delta-normal VaR = **0**; 99 % full-revaluation VaR ≈ **0.64**; 97.5 % ES ≈ **0.66**. Regenerated in Phase 6 with the 1/252 trading-day horizon (report §7): 0.613 and 0.631.
 
 ### 6.2 Progression of methods
 
@@ -372,7 +372,7 @@ A deliberately secondary section in the report; useful, but not the thesis.
 
 ## 9. Historical data and stress tests
 
-### 9.1 Sources (to re-check before Phase 6)
+### 9.1 Sources (re-checked in Phase 6: FRED is used; see `tools/fetch_data.py`)
 
 | Source | Use | Notes |
 |---|---|---|
@@ -441,7 +441,7 @@ Each phase has a **validation gate** and **feeds a section of the report**. A ph
 | **3** | CRR, averaging, Leisen-Reimer, BBS + Richardson, American, Greeks from nodes | Slopes −1 (CRR) and −2 (LR); oscillation visible over consecutive n; American invariants | §4 | 1 wk |
 | **4** ✅ | Generic `PathModel` MC engine, antithetic, controls, randomized QMC, Asian | \|MC − BS\| < 4·SE; slope −0.5; CI coverage ≈ 95 %; efficiency table | §5 | done |
 | **5** ✅ | Greeks: naive FD, FD+CRN, pathwise, LR, mixed, `Dual` cross-check | Full payoff × estimator matrix; FD+CRN stable on the call, unstable on the digital; pathwise digital = 0 demonstrated | §6 | done |
-| **6** | VaR/ES (delta-normal, delta-gamma, Cornish-Fisher, MC, historical), bootstrap, backtests, historical stress | Analytic normal table recovered; subadditivity counterexample; delta-normal VaR ≈ 0 on the short straddle against a significant real VaR | §7 | 2 wk |
+| **6** ✅ | VaR/ES (delta-normal, delta-gamma, Cornish-Fisher, MC, historical), bootstrap, backtests, historical stress | Analytic normal table recovered; subadditivity counterexample; delta-normal VaR ≈ 0 on the short straddle against a significant real VaR | §7 | done |
 | **7** *(optional — see §12.1)* | Heston (QE + CF), Merton, three model-risk experiments | Heston CF price against MC-QE within 4·SE; Merton series against MC; hedging P&L distributions | §8 | 2 wk |
 | **8** | Benchmarks, final write-up, full reproduction | `make report` regenerates every figure; review by a non-specialist | §9–11 | 1 wk |
 

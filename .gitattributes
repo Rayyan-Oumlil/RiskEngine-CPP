@@ -1,0 +1,3 @@
+# The frozen market data must stay byte-for-byte as served (their SHA-256 is in the manifest and
+# checked by tests/test_time_series.cpp): never convert their line endings on checkout.
+data/raw/** -text

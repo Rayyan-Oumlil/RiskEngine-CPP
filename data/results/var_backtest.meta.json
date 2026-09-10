@@ -1,0 +1,21 @@
+{
+  "experiment": "var_backtest",
+  "git_commit": "cee5caebe62fbb732854c93e77fc4f249e82c055",
+  "git_dirty": false,
+  "compiler": "GNU 13.3.0",
+  "build_type": "Release",
+  "cxx_flags": "-O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off -fno-builtin-exp -fno-builtin-log -fno-builtin-erfc -fno-builtin-pow",
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "hardware_threads": 4,
+  "created_utc": "2026-09-24T03:03:00Z",
+  "parameters": {
+    "position": "short 1 ATM call + put, T = 30/365, delta-hedged, spot normalized to 100",
+    "vol_and_rate": "VIX_t / 100 and DGS3MO as of t / 100",
+    "period": "1991-12-24 .. 2026-09-21 (forecast days)",
+    "var_level": 0.98999999999999999,
+    "horizon_years": 0.003968253968253968,
+    "historical_window_days": 500,
+    "mc_scenarios": 20000,
+    "mc_seed": "SeedKey{2026}, the same scenarios every day (common random numbers)"
+  }
+}
