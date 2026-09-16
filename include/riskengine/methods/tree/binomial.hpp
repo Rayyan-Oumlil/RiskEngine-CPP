@@ -24,7 +24,9 @@ namespace riskengine {
 //   Bbs            Broadie and Detemple (1996): CRR in which the last step is replaced by the
 //                  Black-Scholes price over one step (and, for an American option, the maximum of
 //                  that price and the exercise value). Smooths the payoff kink: monotone 1/n error.
-//   BbsRichardson  2 BBS(n) - BBS(n/2): Richardson extrapolation of the smooth 1/n term; even n only.
+//   BbsRichardson  2 BBS(n) - BBS(n/2): Richardson extrapolation of the 1/n term; even n only. It is
+//                  second order only where the BBS error is a smooth c/n: at the money its constant c
+//                  differs between even and odd n, so n must be a multiple of 4 (report 4.2).
 //
 // The backward induction runs in place on one vector (O(n) memory), with the node spots taken from
 // precomputed powers of u and d. Every method rejects parameters for which the up probability
