@@ -1,6 +1,6 @@
 # RiskEngine-CPP — Numerical-method, risk-measure and model risk report
 
-> **Status:** in progress. §2, §3 and §5 to §7 are written (Phases 1, 2 and 4 to 6). The other sections
+> **Status:** in progress. §2 to §7 are written (Phases 1 to 6). The other sections
 > are filled in as the phases of the plan land ([`riskengine_research.md`](riskengine_research.md) §12).
 >
 > **Editorial rules.** Every figure has a self-contained caption (*what it shows*, then *why it
@@ -79,7 +79,8 @@ configuration, flags, parameters, date. Committed results come from a Release bu
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release
 for e in fd_vcurve iv_roundtrip mc_convergence mc_coverage mc_efficiency qmc_convergence \
-         greeks_vs_h greeks_vs_n greeks_matrix var_straddle var_backtest stress_scenarios; do
+         tree_convergence tree_greeks greeks_vs_h greeks_vs_n greeks_matrix var_straddle var_backtest \
+         stress_scenarios; do
   build-release/experiments/$e
 done
 python3 tools/make_figures.py        # pip install -r tools/requirements.txt
@@ -204,7 +205,150 @@ several orders of magnitude: that is the subject of §6.
 
 ## 4. Trees: convergence and pathologies
 
-*To be written in Phase 3.*
+A binomial tree prices on a lattice of n steps, by backward induction from the payoff
+(`methods/tree/binomial.hpp`). It is exact in the limit n → ∞ and handles American exercise
+naturally, which is its reason to exist next to the closed form. Five variants are compared:
+
+- **CRR** (Cox-Ross-Rubinstein): u = e^{σ√Δt}, d = 1/u, risk-neutral p.
+- **CRR averaged:** (Vₙ + Vₙ₊₁)/2.
+- **Leisen-Reimer (LR):** u, d and p chosen by Peizer-Pratt inversion, so that the tree is
+  centred on the strike; odd n only.
+- **BBS** (Broadie-Detemple): CRR whose last step is replaced by the Black-Scholes price over
+  one step, which smooths the payoff kink.
+- **BBS-Richardson:** 2 BBS(n) − BBS(n/2), extrapolating away the 1/n term.
+
+The induction runs in place on one vector (O(n) memory) and takes node spots from precomputed
+powers of u and d. Every variant rejects a lattice whose up probability leaves (0, 1), for example
+CRR with Δt > σ²/(r − q)²: such a tree prices with negative probabilities. The tests
+(`tests/test_trees.cpp`) cover these gates:
+
+- the reference values of the plan (CRR, n = 20,000: European put 5.573426, American put 6.090333);
+- put-call parity to 10⁻¹¹;
+- the orders of convergence;
+- the American invariants below.
+
+Three problems at the canonical market (S = 100, r = 5 %, q = 0, σ = 20 %, T = 1):
+
+- an at-the-money European call, where a node falls on the strike for even n and the strike sits
+  midway between two nodes for odd n;
+- a European call struck at 110, whose position between nodes moves irregularly with n;
+- an at-the-money American put. It has no closed form; its reference, 6.0903710, is
+  BBS-Richardson at n = 2¹⁶. Leisen-Reimer at n = 2¹⁶ + 1 agrees to 4.3 × 10⁻⁶, which is its own
+  1/n error at that size.
+
+### 4.1 Even/odd oscillations of CRR and their origin
+
+![n times the error of CRR, averaged CRR and BBS for every n from 10 to 400](figures/tree_convergence.svg)
+
+*Figure 3 — n × error of the first-order trees for every n from 10 to 400, for the three problems.
+A method converging as c/n draws a flat line at c. **What it shows:** at the money, CRR
+alternates between two branches, −2.00 for even n and +1.75 for odd n. At K = 110 it traces
+waves between −2.4 and +1.5 that never settle. The American put keeps the two branches of the
+at-the-money case. **Why it matters:** the CRR error is O(1/n), but its sign and size depend on
+where the strike falls between two nodes. Neither a single n nor even n alone gives the whole
+picture.* Source: [`data/results/tree_convergence.csv`](../data/results/tree_convergence.csv).
+
+The terminal payoff is kinked at the strike, and the tree integrates it on a grid of spacing
+≈ 2σ√Δt in log-spot. The error therefore depends on the strike's position within its grid cell,
+which is a function of n:
+
+- **At the money** (S = K and u d = 1), a node falls exactly on the strike for even n and none
+  does for odd n. This gives two smooth branches, both O(1/n) but with constants of opposite sign.
+- **Off the money**, the position of ln(K/S) relative to the grid drifts continuously with n, so
+  the constant itself oscillates.
+
+Sampling only even n would give a clean slope of −1 and hide half of the behaviour. It is the
+plan's warning, confirmed.
+
+Averaging consecutive trees cancels the even/odd part: at the money, n × error falls from ±2 to
+−0.12, a 16-fold gain for the price of a second tree. Off the money it only damps the waves to
+±0.6, because the oscillation there is not an alternation. **BBS** smooths the kink itself: its
+n × error is flat at 0.49–0.51 at the money and 0.21–0.23 at K = 110, a monotone error, the one
+property that makes extrapolation possible.
+
+### 4.2 Leisen-Reimer, BBS, Richardson: measured orders
+
+![Envelope of the absolute error against n for the five tree methods, with fitted slopes](figures/tree_convergence_envelope.svg)
+
+*Figure 4 — Largest absolute error over 8 consecutive valid n from n₀, against n₀, with the slope
+fitted from n = 100 to 10,000. The envelope does not depend on where an oscillating error happens
+to cross zero. **What it shows:** Leisen-Reimer is the only second-order method on European
+options (slope −2.0: 3.6 × 10⁻⁹ at n = 10,000). Richardson on BBS does not reach order 2 in the
+envelope, and on the American put every method is first order. **Why it matters:** a
+theoretical order holds only under its assumptions: a smooth error expansion for Richardson, a
+smooth payoff for Leisen-Reimer.* Source:
+[`data/results/tree_convergence_envelope.csv`](../data/results/tree_convergence_envelope.csv).
+
+| Method | Order (slope) | Error at n ≈ 10,000: call K = 100 | Call K = 110 | American put |
+|---|---|---|---|---|
+| CRR | −1.0 (−1.1 at K = 110) | 2.0 × 10⁻⁴ | 1.1 × 10⁻⁴ | 1.5 × 10⁻⁴ |
+| CRR averaged | −1.0 (−0.9 at K = 110) | 1.2 × 10⁻⁵ | 4.6 × 10⁻⁵ | 3.6 × 10⁻⁵ |
+| Leisen-Reimer | **−2.0** (−1.0 American) | **3.6 × 10⁻⁹** | **3.9 × 10⁻⁹** | 2.7 × 10⁻⁵ |
+| BBS | −1.0 | 5.1 × 10⁻⁵ | 2.3 × 10⁻⁵ | 6.8 × 10⁻⁵ |
+| BBS-Richardson | −1.0 (worst case), −2 for n divisible by 4 at the money | 4.4 × 10⁻⁶ | 2.7 × 10⁻⁶ | **6.4 × 10⁻⁶** |
+
+Errors are the envelope at n₀ = 10,000 (max over 8 consecutive valid n).
+
+- **Leisen-Reimer** centres the lattice on the strike for every n, which removes the position
+  effect altogether: order 2 on both European calls, with the same constant at and off the money.
+- **Richardson needs a smooth expansion.** At the money, the BBS error is 0.510/n for even n but
+  0.486/n for odd n. BBS-Richardson combines n with n/2, and when n/2 is odd the two 1/n terms do
+  not cancel: a residual of about 0.05/n remains. For n divisible by 4 the extrapolation works (1.6 × 10⁻⁵
+  at n = 200, 4.2 × 10⁻⁶ at n = 400, a factor of 4); for n ≡ 2 mod 4 it does not (2.5 × 10⁻⁴ at
+  n = 202, 1.2 × 10⁻⁴ at n = 398). At K = 110 the BBS constant drifts slightly with n and the
+  extrapolation gains a factor of about 8 over BBS, not an order.
+- **Early exercise costs an order.** The exercise boundary adds a kink that moves with time, and
+  no lattice is centred on it. Leisen-Reimer falls to first order (−1.0), and BBS-Richardson is
+  the most accurate American method (6.4 × 10⁻⁶ at n ≈ 10,000), but it is still first order.
+
+**American invariants** (`tests/test_trees.cpp`, all methods):
+- Without dividends, the American call equals the European call bit for bit: the continuation
+  value always exceeds the exercise value, so the induction never takes the maximum's other
+  branch (Merton's theorem, which holds exactly on the lattice too).
+- The American put exceeds the European put, and a deep in-the-money put is worth at least its
+  exercise value.
+- With an 8 % dividend yield, the American call is worth more than the European one.
+
+The early-exercise premium of the at-the-money put is 6.090371 − 5.573526 = **0.516845**.
+
+**Remedy.** For a European option, use Leisen-Reimer (order 2 with no conditions), or averaged
+CRR if a CRR lattice is imposed. Never quote a single CRR price as converged: compare n and
+n + 1. For an American option, use BBS-Richardson with n divisible by 4, and estimate the error
+from two such n rather than from a theoretical order that no longer holds.
+
+### 4.3 Greeks from the nodes
+
+Delta, gamma and theta come for free from the tree, at no extra induction:
+
+- the tree is rooted two steps before today (Pelsser and Vorst 1994), so that its three step-2
+  nodes are S d², S and S u² today;
+- centred differences between those nodes give delta and gamma;
+- theta compares today's middle node with the root, same spot, two steps earlier.
+
+| Greek (relative error, n = 1000 / 1001) | CRR | BBS |
+|---|---|---|
+| European call delta | 6.8 × 10⁻⁵ / 2.4 × 10⁻⁵ | 3.8 × 10⁻⁵ / 3.8 × 10⁻⁵ |
+| European call gamma | −2.8 × 10⁻⁴ / −7.5 × 10⁻⁴ | −5.9 × 10⁻⁴ / −5.9 × 10⁻⁴ |
+| European call theta | −1.7 × 10⁻⁴ / −5.0 × 10⁻⁴ | −3.9 × 10⁻⁴ / −3.9 × 10⁻⁴ |
+| American put delta | 1.4 × 10⁻⁴ / 5.4 × 10⁻⁵ | 8.5 × 10⁻⁵ / 8.5 × 10⁻⁵ |
+| American put gamma | −1.8 × 10⁻⁴ / −5.8 × 10⁻⁴ | −4.3 × 10⁻⁴ / −4.2 × 10⁻⁴ |
+| American put theta | −5.5 × 10⁻⁴ / −1.4 × 10⁻³ | −1.0 × 10⁻³ / −1.0 × 10⁻³ |
+
+References: Black-Scholes for the European call. The American put, which has no closed form, is
+measured against the same BBS estimator at n = 2¹⁵, whose own error is about 30 times smaller
+than the n = 1000 errors. Source: [`data/results/tree_greeks.csv`](../data/results/tree_greeks.csv),
+n = 25 to 5001.
+
+The node Greeks converge at first order and inherit the lattice's behaviour. CRR's gamma and theta
+errors change by a factor of about 3 between n = 1000 and n = 1001, while BBS gives the same error
+to two digits for both. At n = 1000 every Greek is within 0.14 % of its reference. That is one to two orders of
+magnitude better than the Monte Carlo estimators of §6 at 2¹⁶ paths, and it holds for an American
+option too, where no closed form exists.
+
+**Remedy.** Read the Greeks of a tree-priced book off an extended tree rather than bumping it.
+A bumped tree moves the strike between nodes, so its finite difference picks up the oscillation of
+§4.1 (the tree version of the pathology in §3.2). Prefer BBS over CRR for its parity-independent
+Greeks.
 
 ## 5. Monte Carlo: convergence and variance reduction
 
@@ -219,7 +363,7 @@ with 1 and 12 time steps, and for the straddle and the geometric Asian with 12 s
 
 ![Standard error and actual error of the Monte Carlo price against the number of paths](figures/mc_convergence.svg)
 
-*Figure 3 — Monte Carlo price of the canonical ATM call with N = 2¹⁰ to 2²² paths (an independent
+*Figure 5 — Monte Carlo price of the canonical ATM call with N = 2¹⁰ to 2²² paths (an independent
 seed for each N): standard error and actual error against Black-Scholes. **What it shows:** the
 standard error falls as N^{−1/2} (fitted slope −0.5004), and the actual error scatters below and
 around it, within 1.55 standard errors at every N. **Why it matters:** the rate is the textbook one,
@@ -232,7 +376,7 @@ digital (K = 130) were compared with their exact prices.
 
 ![Histograms of the z-scores of 1,000 independent Monte Carlo prices against the standard normal density](figures/mc_coverage.svg)
 
-*Figure 4 — z-scores (estimate − exact) / SE of 1,000 independent pricings, against the N(0, 1)
+*Figure 6 — z-scores (estimate − exact) / SE of 1,000 independent pricings, against the N(0, 1)
 density. **What it shows:** 94.5 % (call) and 95.7 % (digital) of the 95 % confidence intervals
 contain the exact price, against 95 % ± 0.69 % expected; the z-scores have standard deviation 1.04
 and 1.00. **Why it matters:** the error bars reported with every Monte Carlo number in this report
@@ -307,7 +451,7 @@ coordinates on the terminal value and then the coarse shape of the path.
 
 ![Spread of one estimate against the number of points, pseudo-random against randomized QMC, for four payoffs](figures/qmc_convergence.svg)
 
-*Figure 5 — Standard deviation of a single N-point estimate (over 64 independent seeds or
+*Figure 7 — Standard deviation of a single N-point estimate (over 64 independent seeds or
 scramblings) against N, for four problems of increasing difficulty; each line is labeled with its
 fitted slope. **What it shows:** pseudo-random Monte Carlo converges at N^{−1/2} everywhere;
 randomized QMC reaches N^{−1} on the one-dimensional problems, including the digital, drops to
@@ -364,7 +508,7 @@ replications and relative to the exact Greek.
 
 ![Relative RMSE of finite-difference Greeks against the bump, with and without common random numbers](figures/greeks_vs_h.svg)
 
-*Figure 6 — Relative RMSE of one estimate (N = 2¹⁶ paths) against the relative bump h, for finite
+*Figure 8 — Relative RMSE of one estimate (N = 2¹⁶ paths) against the relative bump h, for finite
 differences with independent seeds and with common random numbers; the unbiased estimators are
 drawn as h-independent levels. **What it shows:** with independent seeds the error explodes as the
 bump shrinks, as h⁻¹ for delta and h⁻² for gamma; common random numbers remove the explosion for
@@ -376,7 +520,7 @@ difference divides it by 2hS: the variance of the delta estimator is O(1/(N h²)
 estimator O(1/(N h⁴)). At h = 10⁻⁴, a bump that is harmless on the analytic pricer of §3.2, the
 Monte Carlo delta is **6.4 times** its true value in error and the gamma **80,000 times**. Balancing
 the h² bias against this variance gives h* ∝ N^{−1/6} and an RMSE falling only as N^{−1/3}
-(measured −0.36, Figure 7). Even at its best bump (h ≈ 6 %), the independent-seed delta is 1.3 %
+(measured −0.36, Figure 9). Even at its best bump (h ≈ 6 %), the independent-seed delta is 1.3 %
 wrong at N = 2¹⁶, nearly four times the error of the pathwise estimator on the same paths.
 
 **Remedy.** Never difference two independently simulated prices. At the very least use common
@@ -387,7 +531,7 @@ random numbers, and prefer an unbiased estimator (§6.3).
 With the same normal for every bump, a Lipschitz payoff (the call) gives per-path differences that
 stay bounded as h → 0: the variance is O(1/N) whatever h, and the call delta is flat at 0.35 % for
 every h ≤ 1 %. As h → 0, the CRN difference of each path *becomes* the pathwise derivative: the
-two estimators are indistinguishable in Figures 6 and 7.
+two estimators are indistinguishable in Figures 8 and 9.
 
 **Where CRN fail.** A second difference of a kinked payoff (the call gamma), or a first difference
 of a jump (the digital delta), is non-zero only on the paths that end within about hS of the strike,
@@ -415,7 +559,7 @@ N = 2¹⁰ to 2¹⁸).
 
 ![Relative RMSE of every Greek estimator against the number of paths](figures/greeks_vs_n.svg)
 
-*Figure 7 — Relative RMSE of one estimate against N, with the best bump at each N for finite
+*Figure 9 — Relative RMSE of one estimate against N, with the best bump at each N for finite
 differences; each line is labeled with its fitted slope. **What it shows:** the unbiased estimators
 converge at N^{−1/2}, finite differences more slowly, and two estimators do not converge at all on
 the digital: the pathwise delta and the mixed gamma sit at exactly 100 % error for every N.
@@ -480,7 +624,7 @@ a 95 % percentile-bootstrap interval (200 resamples).
 
 ![VaR and ES of the hedged short straddle by method, with bootstrap intervals](figures/var_straddle.svg)
 
-*Figure 8 — One-day 99 % VaR and 97.5 % ES of the hedged short straddle, by method and set of risk
+*Figure 10 — One-day 99 % VaR and 97.5 % ES of the hedged short straddle, by method and set of risk
 factors, with 95 % bootstrap intervals for the empirical methods. **What it shows:** the linear
 method reports no risk at all, the quadratic one 59 % of the spot-only full revaluation, and adding
 the volatility factor or real (fat-tailed) history doubles the full-revaluation figure again. **Why
@@ -592,7 +736,7 @@ Crisis windows: 1 September 2008 to 31 March 2009 and 15 February to 30 April 20
 
 ![Realized loss against the Monte Carlo and historical VaR in 2008 and 2020](figures/var_backtest.svg)
 
-*Figure 9 — Realized one-day loss of the fresh hedged short straddle against its Monte Carlo
+*Figure 11 — Realized one-day loss of the fresh hedged short straddle against its Monte Carlo
 (spot) and historical (spot + vol) 99 % VaR, through the 2008 crisis and the 2020 pandemic; dots
 mark the exceptions of the historical VaR. **What it shows:** the Monte Carlo VaR reacts at once to
 the implied vol but misses the vol spikes; the historical VaR is high on average but rises only
@@ -611,7 +755,7 @@ passing a coverage test on average does not protect against the days that matter
   Christoffersen rejects independence strongly (p = 3 × 10⁻⁵). The exceptions cluster: 14 in the
   seven months of the 2008 crisis and 7 in ten weeks of 2020, when a well-calibrated 99 % VaR would
   have given one or two. A 500-day window carries a crisis only once it has happened, and carries
-  it for two years afterwards (Figure 9, 2009 and late 2020): the average VaR is three times the
+  it for two years afterwards (Figure 11, 2009 and late 2020): the average VaR is three times the
   Monte Carlo one, at the wrong times.
 
 **Remedy.** Backtest coverage *and* independence; a model that passes Kupiec but fails
@@ -641,7 +785,7 @@ NASDAQ moves are simple returns (the CSV stores log-returns). Source:
 
 ![Stress losses of the hedged short straddle, joint and by factor](figures/stress_scenarios.svg)
 
-*Figure 10 — Loss of the hedged short straddle in six historical crises, for the joint move and for
+*Figure 12 — Loss of the hedged short straddle in six historical crises, for the joint move and for
 the spot and vol moves alone. **What it shows:** a single day can cost from one to five and a half
 times the premium received, and the factor that drives the loss changes from crisis to crisis.
 **Why it matters:** these losses are 2 to 11 times the historical 99 % VaR and 4 to 20 times the
