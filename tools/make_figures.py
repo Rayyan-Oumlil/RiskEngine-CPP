@@ -9,6 +9,7 @@ Usage: python3 tools/make_figures.py [--results data/results] [--out docs/figure
 import argparse
 import csv
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -366,6 +367,66 @@ def stress_scenarios(path, meta, out):
 
 # Each renderer takes (csv path, metadata dict, output path). Experiments without an entry (tables)
 # are reported directly from their CSV.
+# Tree methods, in one fixed categorical order for every tree figure.
+TREE_METHODS = [("crr", "CRR"), ("crr_averaged", "CRR averaged"), ("leisen_reimer", "Leisen-Reimer"),
+                ("bbs", "BBS"), ("bbs_richardson", "BBS-Richardson")]
+TREE_COLORS = dict(zip([m for m, _ in TREE_METHODS], SERIES + ["#1baf7a", "#eda100", "#e87ba4"]))
+TREE_PROBLEMS = [("european_call_k100", "European call, K = 100"), ("european_call_k110", "European call, K = 110"),
+                 ("american_put_k100", "American put, K = 100")]
+
+
+def tree_convergence(path, meta, out):
+    rows = read_rows(path)
+    fig, axes = plt.subplots(3, 1, figsize=(7.4, 7.2), sharex=True)
+    for ax, (problem, title) in zip(axes, TREE_PROBLEMS):
+        for method, label in TREE_METHODS:
+            if method not in ("crr", "crr_averaged", "bbs"):
+                continue  # second-order methods are invisible on this scale: see the envelope figure
+            pts = [(int(r["n"]), int(r["n"]) * float(r["error"])) for r in rows
+                   if r["problem"] == problem and r["method"] == method]
+            n, e = zip(*pts)
+            ax.plot(n, e, linestyle="none", marker="o", markersize=2.2, color=TREE_COLORS[method], label=label)
+        ax.axhline(0.0, color=AXIS, linewidth=1)
+        ax.set_title(title, loc="left", fontsize=10)
+        ax.set_ylabel("n × error")
+    axes[-1].set_xlabel("number of steps n (every n)")
+    fig.legend(*axes[0].get_legend_handles_labels(), loc="upper center", ncol=3, frameon=False, markerscale=2.5)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(out, metadata={"Date": None})
+    plt.close(fig)
+
+
+def tree_convergence_envelope(path, meta, out):
+    rows = read_rows(path)
+    fig, axes = plt.subplots(1, 3, figsize=(7.4, 3.8), sharey=True)
+    for ax, (problem, title) in zip(axes, TREE_PROBLEMS):
+        ends = []
+        for method, label in TREE_METHODS:
+            pts = [(int(r["n0"]), float(r["max_abs_error"])) for r in rows
+                   if r["problem"] == problem and r["method"] == method]
+            n, e = zip(*pts)
+            tail = [(x, y) for x, y in pts if 100 <= x <= 10000]
+            slope = log_slope([x for x, _ in tail], [y for _, y in tail])
+            ax.loglog(n, e, color=TREE_COLORS[method], linewidth=2, marker="o", markersize=3, label=label)
+            ends.append((math.log10(e[-1]), n[-1], f"{slope:+.1f}"))
+        # Slope labels at the line ends, pushed apart so that they never overlap.
+        ends.sort()
+        placed = []
+        for y, x, text in ends:
+            y = max(y, placed[-1] + 0.32) if placed else y
+            placed.append(y)
+            ax.text(x * 1.3, 10 ** y, text, va="center", color=INK_SECONDARY, fontsize=8)
+        ax.set_title(title, loc="left", fontsize=9)
+        ax.set_xlim(right=10000 * 6)
+        ax.set_xlabel("steps n")
+    axes[0].set_ylabel("max |error| over 8 consecutive n")
+    fig.legend(*axes[0].get_legend_handles_labels(), loc="upper center", ncol=5, frameon=False, fontsize=8)
+    fig.suptitle("Labels: fitted slope in n from n = 100 to 10,000", y=0.03, fontsize=8, color=MUTED)
+    fig.tight_layout(rect=(0, 0.03, 1, 0.92))
+    fig.savefig(out, metadata={"Date": None})
+    plt.close(fig)
+
+
 FIGURES = {
     "fd_vcurve": lambda path, meta, out: fd_vcurve(read_csv(path), meta, out),
     "iv_roundtrip": iv_roundtrip,
@@ -377,6 +438,8 @@ FIGURES = {
     "var_straddle": var_straddle,
     "var_backtest": var_backtest,
     "stress_scenarios": stress_scenarios,
+    "tree_convergence": tree_convergence,
+    "tree_convergence_envelope": tree_convergence_envelope,
 }
 
 
