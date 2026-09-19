@@ -158,14 +158,12 @@ configuration, flags, parameters, date. Committed results come from a Release bu
 
 ```
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
-cmake --build build-release
-for e in fd_vcurve iv_roundtrip mc_convergence mc_coverage mc_efficiency qmc_convergence \
-         tree_convergence tree_greeks greeks_vs_h greeks_vs_n greeks_matrix var_straddle var_backtest \
-         stress_scenarios; do
-  build-release/experiments/$e
-done
-python3 tools/make_figures.py        # pip install -r tools/requirements.txt
+cmake --build build-release --target report   # every experiment, then every figure
 ```
+
+A full regeneration takes about 2.5 minutes on the machine of §9. It reproduces every committed CSV
+and SVG bit for bit, except the timing and efficiency columns of `mc_efficiency` and
+`greeks_matrix` (Appendix D).
 
 ---
 
