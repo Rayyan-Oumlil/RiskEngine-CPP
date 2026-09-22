@@ -18,7 +18,7 @@ The deliverable is [`docs/model_risk_report.md`](docs/model_risk_report.md) (wri
 | CRR binomial tree | O(1/n), non-monotonic (oscillates) | American exercise, discrete dividends | Slow, biased at small n unless corrected |
 | Monte Carlo | O(1/√N) | Path-dependent payoffs, high-dimensional problems | Noisy; naive Greeks via bumping are actively wrong without common random numbers |
 
-Full methodology, formulas, and verified reference numbers: [`docs/riskengine_research.md`](docs/riskengine_research.md).
+Full methodology, formulas, and verified reference numbers: [`docs/riskengine_research.md`](docs/riskengine_research.md). The core project (numerical-method risk + risk-measure disagreement) is scoped to these three methods; an optional extension phase adds Heston and Merton to demonstrate genuine model risk (different assumptions, not just different numerics) — see the plan's descoping section for what's core vs. stretch.
 
 ## Architecture
 
@@ -27,7 +27,7 @@ Full methodology, formulas, and verified reference numbers: [`docs/riskengine_re
 
 ## Status
 
-Early scaffold (Phase 0). See [`docs/riskengine_research.md`](docs/riskengine_research.md) §8 for the phased build plan and validation gates.
+Early scaffold (Phase 0). See [`docs/riskengine_research.md`](docs/riskengine_research.md) §12 for the phased build plan, validation gates, and critical path.
 
 ## Building
 
