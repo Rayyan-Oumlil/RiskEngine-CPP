@@ -47,7 +47,6 @@ int main(int argc, char** argv) {
                         const double price = black_scholes_price(o, m);
                         const double vega = black_scholes_greeks(o, m).vega;
                         const ImpliedVolResult iv = implied_vol(o, price, Spot{s}, Rate{r}, Rate{q});
-                        const bool solved = iv.status == ImpliedVolStatus::Ok;
                         const double sst = sigma * std::sqrt(t);
                         const double d1 = (std::log(s / k) + (r - q) * t) / sst + 0.5 * sst, d2 = d1 - sst;
                         const double terms = type == OptionType::Call
@@ -56,8 +55,7 @@ int main(int argc, char** argv) {
                         const double d = std::max(std::abs(d1), std::abs(d2));
                         const double noise = eps * (1.0 + (1.0 + d * d) * terms / (sigma * vega));
                         csv.row(k, t, sigma, type == OptionType::Call ? "call" : "put", itm ? 1 : 0, price, vega,
-                                solved ? "ok" : "zero_time_value", iv.vol,
-                                solved ? std::abs(iv.vol - sigma) / sigma : 1.0, noise);
+                                to_string(iv.status), iv.vol, std::abs(iv.vol - sigma) / sigma, noise);
                     }
                 }
     });
