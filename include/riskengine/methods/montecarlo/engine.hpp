@@ -64,21 +64,22 @@ class MonteCarlo {
 
 public:
     MonteCarlo(Payoff payoff, Maturity maturity, MonteCarloConfig config, Control control = {})
+        requires(!ParametrizedModel<Model>)
         : payoff_(payoff), maturity_(maturity), config_(config), control_(control) {
-        assert(config_.steps >= 1);
-        assert(!config_.antithetic || (config_.paths % 2 == 0 && config_.pilot_paths % 2 == 0));
-        assert(config_.sampling == Sampling::PseudoRandom ||
-               (config_.replications >= 2 && draws() <= sobol_data::kMaxDimension));
-        // Checked in every build, not only with assertions: past 2^32 points per run the 32-bit
-        // Sobol sequence would silently wrap around and repeat its points.
-        if (config_.sampling == Sampling::RandomizedQmc &&
-            samples_per_run(config_.paths) > (std::uint64_t{1} << Sobol::kBits))
-            throw std::invalid_argument("randomized QMC supports at most 2^32 samples per replication");
+        check_config();
+    }
+
+    // Models with their own parameters (Heston, Merton) take them here, before the control.
+    MonteCarlo(Payoff payoff, Maturity maturity, MonteCarloConfig config, model_params_t<Model> params,
+               Control control = {})
+        requires ParametrizedModel<Model>
+        : payoff_(payoff), maturity_(maturity), config_(config), control_(control), params_(params) {
+        check_config();
     }
 
     Estimate price(const MarketState& m, SeedKey key) const {
         assert((key.stream & kReservedStreamBits) == 0);
-        const Model model(m);
+        const Model model = make_model(m);
         const double discount = std::exp(-m.rate.value * maturity_.value);
 
         double beta = 0.0, mu = 0.0;
@@ -116,6 +117,26 @@ public:
     const MonteCarloConfig& config() const { return config_; }
 
 private:
+    void check_config() const {
+        assert(config_.steps >= 1);
+        assert(!config_.antithetic || (config_.paths % 2 == 0 && config_.pilot_paths % 2 == 0));
+        assert(config_.sampling == Sampling::PseudoRandom ||
+               (config_.replications >= 2 && draws() <= sobol_data::kMaxDimension));
+        // Checked in every build, not only with assertions: past 2^32 points per run the 32-bit
+        // Sobol sequence would silently wrap around and repeat its points.
+        if (config_.sampling == Sampling::RandomizedQmc &&
+            samples_per_run(config_.paths) > (std::uint64_t{1} << Sobol::kBits))
+            throw std::invalid_argument("randomized QMC supports at most 2^32 samples per replication");
+    }
+
+    Model make_model(const MarketState& m) const {
+        if constexpr (ParametrizedModel<Model>) {
+            return Model(m, params_);
+        } else {
+            return Model(m);
+        }
+    }
+
     // Sources of standard normals. Each block of a run gets its own cursor.
     struct PseudoRandomNormals {
         SeedKey key;
@@ -216,6 +237,7 @@ private:
     Maturity maturity_;
     MonteCarloConfig config_;
     Control control_;
+    model_params_t<Model> params_{};
 };
 
 } // namespace riskengine

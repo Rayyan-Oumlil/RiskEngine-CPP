@@ -23,10 +23,29 @@ concept StochasticPricer = requires(const P& p, const MarketState& m, SeedKey k)
     { p.price(m, k) } -> std::same_as<Estimate>;
 };
 
+// A model with parameters beyond the market state (stochastic volatility, jumps) declares them as
+// M::Params and is built from (market, params); GBM is built from the market alone.
+template <class M>
+concept ParametrizedModel = requires { typename M::Params; } &&
+                            std::constructible_from<M, const MarketState&, const typename M::Params&>;
+
+struct NoModelParams {};
+
+template <class M>
+struct model_params {
+    using type = NoModelParams;
+};
+template <ParametrizedModel M>
+struct model_params<M> {
+    using type = typename M::Params;
+};
+template <class M>
+using model_params_t = typename model_params<M>::type;
+
 // Stochastic dynamics, decoupled from the solvers. `factors` normals drive one step; spot()
 // exposes the traded price from the (possibly multi-dimensional) state.
 template <class M>
-concept PathModel = std::constructible_from<M, const MarketState&> &&
+concept PathModel = (std::constructible_from<M, const MarketState&> || ParametrizedModel<M>) &&
                     requires(const M& m, typename M::State s, double dt, std::span<const double> z) {
                         { M::factors } -> std::convertible_to<std::size_t>;
                         { m.initial_state() } -> std::same_as<typename M::State>;

@@ -1,0 +1,19 @@
+{
+  "experiment": "hedging_model_risk",
+  "git_commit": "8ceb7c6e875da26a929e305136605ad82edee7c2",
+  "git_dirty": false,
+  "compiler": "GNU 13.3.0",
+  "build_type": "Release",
+  "cxx_flags": "-O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off -fno-builtin-exp -fno-builtin-log -fno-builtin-erfc -fno-builtin-pow",
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "hardware_threads": 4,
+  "created_utc": "2026-09-24T05:11:00Z",
+  "parameters": {
+    "option": "short 1 ATM call, K = 100, T = 1, sold at its Black-Scholes price at 20 % vol",
+    "hedge": "Black-Scholes delta at 20 % vol, self-financing, cash at r = 5 %",
+    "worlds": "Black-Scholes 20 %; Heston kappa 1.5, xi 0.6, rho -0.7, v0 = theta = 0.0466107; Merton lambda 0.25, jumps N(-0.2, 0.1^2), diffusion 17.13 % (model_risk_exotics)",
+    "paths": 20000,
+    "grid_steps": 1008,
+    "seed": "RandomStream(SeedKey{2026, world}, path), world = 0, 1, 2"
+  }
+}

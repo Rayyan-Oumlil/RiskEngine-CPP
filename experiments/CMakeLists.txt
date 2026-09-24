@@ -44,6 +44,9 @@ set(RISKENGINE_EXPERIMENTS
   stress_scenarios
   tree_convergence
   tree_greeks
+  heston_discretization
+  model_risk_exotics
+  hedging_model_risk
 )
 
 foreach(experiment IN LISTS RISKENGINE_EXPERIMENTS)
