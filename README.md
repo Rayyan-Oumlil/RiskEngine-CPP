@@ -70,6 +70,8 @@ build-server/server/riskengine_server   # then open http://localhost:8080
 
 Local only: no live market data, no persistence, no authentication. `POST /price` returns Black-Scholes, both trees, Monte Carlo with its standard error and pathwise delta, and the Heston/Merton prices for one option; `POST /var` returns normal VaR/ES for a given loss mean and standard deviation.
 
+![RiskEngine-CPP dashboard: one option priced by Black-Scholes, binomial trees, Monte Carlo, Heston and Merton, side by side](docs/figures/dashboard.png)
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
