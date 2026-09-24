@@ -1,6 +1,6 @@
 {
   "experiment": "tree_greeks",
-  "git_commit": "3c7d35285f2dbb8cd6b9e42c50e5dfdb0c96b22d",
+  "git_commit": "042535d216b0710d5ef1cba3c6058a272e92e039",
   "git_dirty": false,
   "compiler": "GNU 13.3.0",
   "build_type": "Release",

@@ -25,7 +25,9 @@ jobs:
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DRISKENGINE_BUILD_BENCH=ON
       - name: Build
-        run: cmake --build build --parallel
+        # Capped at 2: GitHub-hosted runners have 2 cores / ~7 GB RAM, and unlimited
+        # --parallel lets enough heavy C++ translation units overlap to OOM-kill cc1plus.
+        run: cmake --build build --parallel 2
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
@@ -36,7 +38,7 @@ jobs:
       - name: Configure
         run: cmake -S . -B build
       - name: Build
-        run: cmake --build build --config Debug --parallel
+        run: cmake --build build --config Debug --parallel 2
       - name: Test
         run: ctest --test-dir build -C Debug --output-on-failure
 
@@ -49,6 +51,6 @@ jobs:
           CC=clang CXX=clang++ cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Debug -DRISKENGINE_ENABLE_SANITIZERS=ON
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel 2
       - name: Test
         run: ctest --test-dir build --output-on-failure

@@ -1,6 +1,6 @@
 {
   "experiment": "model_risk_exotics",
-  "git_commit": "8ceb7c6e875da26a929e305136605ad82edee7c2",
+  "git_commit": "5a9787930a49499effbfaacb4bc3387b7d7fab87",
   "git_dirty": false,
   "compiler": "GNU 13.3.0",
   "build_type": "Release",
