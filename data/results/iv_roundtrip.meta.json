@@ -1,11 +1,11 @@
 {
   "experiment": "iv_roundtrip",
-  "git_commit": "6d6e4b128c20becf355b69784ed02afe6aee144f",
+  "git_commit": "fe7c3d85c44680b5ccfdc570d8fb59e5f96524ad",
   "git_dirty": false,
   "compiler": "GNU 13.3.0",
   "build_type": "Release",
   "cxx_flags": "-O3 -DNDEBUG",
-  "created_utc": "2026-09-24T01:17:00Z",
+  "created_utc": "2026-09-24T01:37:37Z",
   "parameters": {
     "spot": 100,
     "rate": 0.029999999999999999,
