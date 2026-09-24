@@ -1,7 +1,8 @@
 # RiskEngine-CPP — Numerical-method, risk-measure and model risk report
 
-> **Status:** in progress. §2 to §7 are written (Phases 1 to 6). The other sections
-> are filled in as the phases of the plan land ([`riskengine_research.md`](riskengine_research.md) §12).
+> **Status:** complete for Phases 0 to 6 and 8 of the plan
+> ([`riskengine_research.md`](riskengine_research.md) §12). Phase 7 (model risk: Heston, Merton) was
+> not built; §8 states that scope explicitly.
 >
 > **Editorial rules.** Every figure has a self-contained caption (*what it shows*, then *why it
 > matters*). Every number points to the CSV or test that produced it. Every stochastic estimate is
@@ -10,13 +11,93 @@
 
 ## Executive summary
 
-*To be written in Phase 8, once the quantified findings of §3 to §8 are established.*
+This report validates a C++20 pricing and risk engine: one model (Black-Scholes-Merton dynamics)
+priced by three numerical methods (closed form, binomial trees, Monte Carlo) and used for Greeks
+and risk measures. Every figure is regenerated from a committed experiment, and every stochastic
+number carries its error bar. Its four main findings:
+
+1. **Greeks: the most dangerous failures are the silent ones (§6).** On a digital option, the
+   pathwise delta converges with complete confidence to the wrong answer: 0 with a standard error
+   of 0, against a true delta of 0.0188. Finite differences with independent seeds and a bump that
+   is harmless on a closed form (h = 10⁻⁴) make a Monte Carlo delta 6.4 times its true value in
+   error, and a gamma 80,000 times. The recommendation matrix of §6.4 picks one estimator per
+   payoff type:
+   - for a Lipschitz payoff, the pathwise delta and the mixed gamma (0.35 % and 0.82 % error at
+     2¹⁶ paths on the at-the-money call);
+   - for a payoff with a jump, the likelihood ratio.
+2. **Risk measures: the method sets the capital number before any parameter is estimated
+   (§7).** On a delta-hedged short straddle, the one-day 99 % VaR is:
+   - 0 by delta-normal;
+   - 0.361 by delta-gamma normal (41 % short);
+   - 0.613 [0.609, 0.616] by full revaluation;
+   - 1.306 [1.301, 1.313] once implied vol is a risk factor.
+
+   Over 34 years of NASDAQ and VIX data, the model-based methods are in the Basel red zone in
+   every 250-day window. Historical simulation passes coverage on average (1.35 % exceptions),
+   but its exceptions cluster in crises (Christoffersen p = 3 × 10⁻⁵). Replayed crises cost up to
+   11 times the historical VaR.
+3. **Monte Carlo: mathematics beats hardware (§5, §9).** Control and antithetic variates raise
+   efficiency 41× on an at-the-money call and over 1,000× on an in-the-money call and an Asian.
+   Perfect scaling on the 4 vCPUs of the test machine would give at most 4× (measured 3.7×).
+   Randomized QMC cuts the error of a single estimate by 344× in one dimension, but only by 4.7×
+   on a digital of a 12-date average. The coverage of the reported 95 % intervals is 94.5–95.7 %,
+   as it should be.
+4. **Convergence orders hold only under their assumptions (§3, §4).**
+   - The CRR tree's error flips sign between even and odd n (−2.00/n against +1.75/n at the money).
+   - Leisen-Reimer is the only second-order tree (3.6 × 10⁻⁹ at n = 10,000). Richardson
+     extrapolation of BBS works only for n divisible by 4, and early exercise brings every method
+     back to first order.
+   - On the closed form itself, a finite-difference gamma below a relative bump of 10⁻⁸ is 100 %
+     wrong, and an implied vol backed out of a deep in-the-money quote loses up to 5.7 % to the
+     rounding of the quote.
+
+The engine reproduces every result bit for bit, for any thread count and on GCC and Clang. Model
+risk in the strict sense (stochastic volatility, jumps) was not covered (§8).
 
 ---
 
 ## 1. Introduction and risk taxonomy
 
-*To be written in Phase 8.* Framework: [`riskengine_research.md`](riskengine_research.md) §0.
+### 1.1 Three kinds of risk in a number
+
+Analytic Black-Scholes, a binomial tree and Monte Carlo under geometric Brownian motion are **one
+model and three numerical methods**. That they converge to the same price is a correctness gate,
+not a finding. The report studies three distinct sources of error, and never conflates them:
+
+| Risk | Question | Where |
+|---|---|---|
+| **Numerical-method risk** | For a given model, how fast and how reliably does each method converge, and where does a naive implementation break without warning? | §3–§6 |
+| **Risk-measure risk** | For a given position and history, why do two reasonable risk measures give radically different answers? | §7 |
+| **Model risk** | What happens when the dynamics themselves change while the vanilla prices stay the same? | §8 (not covered) |
+
+The guiding principle: **the risk of a number is a property of the number, not of the code.**
+- A Monte Carlo price without a standard error is not a result.
+- Nor is a Greek without its bias/variance analysis, or a VaR without a confidence interval and
+  a backtest.
+
+The engine makes these omissions hard. A stochastic price is an `Estimate` carrying its standard
+error, and a stochastic pricer is a pure function of (market, seed), so common random numbers are
+automatic. Every figure is the output of a committed experiment whose metadata record the code
+version.
+
+### 1.2 Scope: what the report demonstrates and what it does not claim
+
+**Demonstrated**, under GBM with a continuous dividend yield:
+- the closed form and its numerical limits (implied vol, finite differences);
+- binomial trees for European and American vanillas;
+- Monte Carlo with variance reduction and randomized QMC for vanilla, digital and Asian payoffs;
+- five Monte Carlo Greek estimators;
+- VaR and ES by seven methods on a non-linear book, backtested on 34 years of market data and
+  stress-tested on six historical crises.
+
+**Not claimed:**
+- **No model risk.** No stochastic volatility, no jumps (§8), and no calibration to a volatility
+  smile.
+- **Hypothetical option books.** They are priced from index levels and the VIX, not from
+  historical option chains, which are not freely available.
+- **Single-machine timings.** The performance figures of §9 belong to one virtual machine.
+- **Numerical-method conclusions only.** The report says nothing about which risk model a
+  regulator should accept. It shows what each method gets wrong, why, and how to detect it.
 
 ---
 
@@ -808,7 +889,31 @@ factor of the book, and read the factor split to see which Greek the loss comes 
 
 ## 8. Model risk beyond GBM
 
-*Phase 7, optional ([`riskengine_research.md`](riskengine_research.md) §12.1).*
+**Not covered.** The plan made this phase (Heston and Merton models, Phase 7) the first extension
+to cut ([`riskengine_research.md`](riskengine_research.md) §12.1). It was not built. This report
+demonstrates **numerical-method risk and risk-measure risk**; **model risk in the strict sense is
+identified as future work**. Every result above holds *within* GBM, and none of them shows what
+changes when the dynamics do.
+
+The report nevertheless contains three pieces of evidence that the dynamics matter, each measured
+with the risk-measure machinery rather than with an alternative model:
+- **§7.3:** real NASDAQ returns rescaled to the same 20 % vol give a 99 % VaR 58 % above the GBM
+  one. That excess is fat tails, which GBM cannot produce.
+- **§7.3–7.4:** implied vol moves with the market (correlation −0.75 with the index). Leaving it
+  out halves the VaR of a short straddle and puts a GBM-based VaR in the Basel red zone in 29 of
+  the 34 windows of 250 days.
+- **§7.5:** the vol-only component of the 1987 crash is 25.1 per straddle, larger than any spot
+  move. No constant-vol model can generate it.
+
+**What the missing phase would add** (plan §7.2). Implementation notes: Heston by Andersen's QE
+scheme, with the Albrecher et al. characteristic function; Merton by its series of Black-Scholes
+prices. Three experiments:
+1. **Same at-the-money price, diverging exotics.** Calibrate BS, Heston and Merton to the same
+   at-the-money price, then price an out-of-the-money call, a digital and a barrier.
+2. **Hedging in the wrong world.** Delta-hedge with the Black-Scholes delta in a Heston or Merton
+   world, as a function of the rebalancing frequency.
+3. **Error decomposition under Heston.** Separate the discretization bias from the statistical
+   error. The `Estimate::discretization` field is reserved for it.
 
 ## 9. Engineering and performance notes
 
@@ -917,15 +1022,231 @@ claims to do, or than a cheaper operation it contains, is a bug until proven oth
 
 ## 10. Limitations and future work
 
-*To be written in Phase 8.*
+**Model and instruments.**
+- Everything is under GBM with a flat volatility and flat rates: no smile, no term structure, no
+  discrete dividends.
+- The American option is only a put or call on a tree. Other gaps:
+  - no least-squares Monte Carlo (Longstaff-Schwartz);
+  - no barrier options, so no discrete-monitoring correction (Broadie-Glasserman-Kou);
+  - no model risk at all (§8).
+
+**Numerical methods.**
+- **Implied vol.** A bracketed Brent solver on the log price, at 570–650 ns per quote. Jäckel's
+  *Let's Be Rational* would be faster and more accurate in the wings.
+- **Greeks.** Forward-mode automatic differentiation is used only as a cross-check of the
+  pathwise estimator. There is no adjoint mode (AAD), which a book with many risk factors would
+  need. Smoothing a digital payoff, the usual fix for pathwise Greeks, was not studied.
+- **Trees.** The node Greeks are validated against Black-Scholes for European options, but only
+  against a finer tree of the same kind for the American put. Leisen-Reimer Greeks, whose nodes
+  are not centred on the spot, were not implemented.
+- **Monte Carlo speed.** 38.6 ms per million single-threaded paths, twice the plan's target
+  (§9.1). Batched, vectorized normal generation and `exp` would close the gap; no result of this
+  report was limited by it.
+
+**Risk measures.**
+- **Scope.** One book (a delta-hedged straddle), one horizon (one day), one market (NASDAQ).
+- **Implied vol.** Proxied by the VIX, a 30-day at-the-money implied vol, applied to a hypothetical
+  30-day at-the-money option, so skew risk is absent.
+- **Historical simulation.** It uses an equally weighted 500-day window. Filtered historical
+  simulation, or volatility scaling, is the obvious next step: §7.4 shows the window reacting a
+  crisis late and keeping it for two years.
+- **Stress tests.** The six scenarios are historical only, with no hypothetical or reverse stress
+  test.
+
+**Engineering.**
+- **Timings.** They come from one 4-vCPU virtual machine. Thread scaling beyond 4 and the
+  vectorization targets of the plan remain untested.
+- **Reproducibility.** Bit-for-bit reproducibility is established for GCC and Clang on x86-64.
+  MSVC passes every test and draws bit-identical uniforms, but its `log` and `exp` differ in the
+  last ulps (`tests/test_rng.cpp` allows 4 ulps there), so its results can differ from the Linux
+  ones in the last digits; this is not measured.
+
+**Extensions**, ranked by value for effort in the plan
+([`riskengine_research.md`](riskengine_research.md) §12.1):
+1. the discrete-barrier correction (BGK);
+2. Python bindings for the experiments;
+3. Longstaff-Schwartz;
+4. adjoint AAD;
+5. local volatility (Dupire) as a further model;
+6. explicit SIMD, only if measured to matter.
 
 ## 11. Conclusion: operational recommendations
 
-*To be written in Phase 8.*
+For a desk or a model-validation team, the findings reduce to rules. Each rule states its
+mechanism and its evidence in the section cited.
+
+**Pricing**
+1. **Implied vol:** invert the out-of-the-money quote. An implied vol from a deep in-the-money
+   quote must come with its noise bound ε(1 + d²)(a + b)/(σ·vega) (§3.1).
+2. **Finite differences on a deterministic pricer:** use a relative bump near ε^{1/3} for delta
+   and ε^{1/4} for gamma (10⁻⁴ is safe for both). Never shrink the bump "for accuracy" (§3.2).
+3. **Trees:**
+   - European options: Leisen-Reimer, or averaged CRR if a CRR lattice is imposed.
+   - American options: BBS-Richardson with n divisible by 4.
+   - Never quote one CRR price as converged: compare n and n + 1. Read the Greeks off an extended
+     tree rather than bumping it (§4).
+4. **Monte Carlo:**
+   - Report every price with its standard error; the engine's intervals cover at the nominal
+     rate (§5.1).
+   - Choose variance reduction per payoff and check it on the efficiency metric, since both
+     antithetic and control variates can fail (§5.2).
+   - Use randomized QMC with a Brownian bridge for smooth payoffs. Expect little gain on
+     discontinuous multi-dimensional ones (§5.3).
+
+**Greeks under noise**
+
+5. Never difference two independently simulated prices (§6.1).
+6. For a Lipschitz payoff, use the pathwise delta and the mixed gamma. For a payoff with a jump,
+   use the likelihood ratio (§6.4).
+7. A zero standard error is not evidence of accuracy: it is the signature of the pathwise
+   estimator's silent failure on a digital (§6.3).
+
+**Risk measures**
+
+8. Do not use delta-normal VaR on a book whose Greeks beyond delta matter. A delta-hedged book is
+   where it matters most: there it reports zero (§7.1).
+9. Revalue fully, and include every risk factor with a first-order Greek (here implied vol).
+   Prefer ES with a bootstrap interval, and read the disagreement between model and historical
+   scenarios as a measure of model risk (§7.3).
+10. Backtest coverage *and* independence. A method that passes Kupiec but fails Christoffersen is
+    late, not right (§7.4).
+11. Complement VaR with joint historical stress scenarios shocking every factor of the book (§7.5).
+
+**Engineering**
+
+12. Make results independent of the thread count by fixing the work split. Keep per-thread
+    accumulators local and written once (§2.2, §9.2–9.3).
+13. Validate what a benchmark computes, not only its time (§9.4).
 
 ---
 
 ## Appendices
 
-*A. derivations of the pathwise and LR estimators; B. parameter tables; C. reference values and
-sources; D. reproduction procedure (see §2.2 for the current state).*
+### A. The pathwise and likelihood-ratio estimators under GBM
+
+With Z ~ N(0, 1), the terminal spot is S_T = S exp((r − q − σ²/2)T + σ√T Z). For a discounted
+payoff e^{−rT} f(S_T), the Greeks of §6 are expectations of the following per-path quantities
+(`methods/montecarlo/greeks.hpp`).
+
+**Pathwise delta.** Differentiate along the path. ∂S_T/∂S = S_T/S, so
+
+  Δ = E[e^{−rT} f′(S_T) S_T / S].
+
+This is valid when f is Lipschitz (f′ exists almost everywhere and the derivative can pass under
+the expectation). For a digital, f′ = 0 almost everywhere, so the estimator is identically 0. That
+is the silent failure of §6.3: the derivative of the expectation is carried by the jump, which the
+pathwise derivative cannot see.
+
+**Likelihood ratio.** Differentiate the density instead of the payoff. Z = (ln S_T − ln S − μ)/(σ√T)
+with μ = (r − q − σ²/2)T, and the density of S_T is φ(Z)/(S_T σ√T), so
+
+  ∂ ln p/∂S = Z/(Sσ√T),  Δ = E[e^{−rT} f(S_T) · Z/(Sσ√T)].
+
+For gamma, ∂²p/∂S² / p = (∂ ln p/∂S)² + ∂² ln p/∂S², with ∂Z/∂S = −1/(Sσ√T), which gives
+
+  Γ = E[e^{−rT} f(S_T) · (Z² − 1 − Zσ√T)/(S²σ²T)].
+
+No derivative of f is needed, so the estimator is unbiased for any payoff. Its variance grows as
+T → 0 through the 1/(σ√T) factors.
+
+**Mixed gamma.** Apply the likelihood ratio to the pathwise delta. Write the pathwise delta as
+E[g(S_T)]/S with g(x) = e^{−rT} f′(x) x. Then
+
+  Γ = ∂/∂S (E[g(S_T)]/S) = E[g(S_T) Z/(Sσ√T)]/S − E[g(S_T)]/S² = E[e^{−rT} f′(S_T) S_T (Z/(σ√T) − 1)] / S².
+
+This is unbiased when f is Lipschitz: the kink is handled by the likelihood ratio, the smooth
+part pathwise.
+
+**Finite differences.** Central differences use the relative bumps S(1 ± h), divided by the step
+actually realized in floating point. With independent seeds, the variance is O(1/(Nh²)) for delta
+and O(1/(Nh⁴)) for gamma. With common random numbers it is O(1/N) for a Lipschitz delta, and
+O(1/(Nh)) where the payoff jumps or kinks under a second difference.
+
+### B. Experiments and parameters
+
+Every experiment writes `data/results/<id>.csv` and `<id>.meta.json`, which records all its
+parameters, seeds, the git commit, the compiler and flags, and the CPU. This table is the index.
+
+| Experiment (`experiments/<id>.cpp`) | Report | Content |
+|---|---|---|
+| `iv_roundtrip` | §3.1, Figure 1 | price → vol → price on a 315-point grid |
+| `fd_vcurve` | §3.2, Figure 2 | finite-difference Greeks against the bump |
+| `tree_convergence` (+ `_envelope`) | §4.1–4.2, Figures 3–4 | five tree methods, every n from 10 to 400, envelope to 10,000 |
+| `tree_greeks` | §4.3 | node Greeks against Black-Scholes and a fine tree |
+| `mc_convergence` | §5.1, Figure 5 | error and standard error, N = 2¹⁰ to 2²² |
+| `mc_coverage` | §5.1, Figure 6 | 1,000 independent pricings, interval coverage |
+| `mc_efficiency` | §5.2 | variance reduction: variance, time, efficiency |
+| `qmc_convergence` | §5.3, Figure 7 | pseudo-random against randomized QMC, 64 replications |
+| `greeks_vs_h` | §6.1, Figure 8 | finite-difference Greeks against the bump |
+| `greeks_vs_n` | §6.2–6.3, Figure 9 | every estimator against N |
+| `greeks_matrix` | §6.4 | payoff × regime × Greek × estimator |
+| `var_straddle` | §7.1–7.3, Figure 10 | VaR and ES by seven methods, bootstrap intervals |
+| `var_backtest` (+ `_summary`) | §7.4, Figure 11 | 8,744-day backtest, Kupiec, Christoffersen, Basel zones |
+| `stress_scenarios` | §7.5, Figure 12 | six historical crises, joint and by factor |
+| `bench/benchmarks.cpp` → `bench.json` | §9 | Google Benchmark, 5 repetitions |
+
+The reference market throughout is S = K = 100, r = 5 %, q = 0, σ = 20 %, T = 1. The
+risk-measure book is the 30-day straddle of §7 at the same market. Units follow
+[`conventions.md`](conventions.md).
+
+### C. Reference values and sources
+
+**Independent references used by the tests:**
+- **Black-Scholes prices and Greeks:** mpmath at 50 digits, with the Greeks as numerical
+  derivatives of the high-precision price (`tools/bs_reference.py`, `tests/test_black_scholes.cpp`).
+- **Inverse normal:** bisection at 60 digits (`tools/normal_icdf_reference.py`, `tests/test_rng.cpp`).
+- **Philox 4×32-10:** the Random123 known-answer vectors, checked at compile time.
+- **Sobol direction numbers:** Joe-Kuo, checked bit for bit against SciPy
+  (`tools/gen_sobol_directions.py`).
+- **Binomial trees:** the CRR values at n = 20,000 of the research plan (European put 5.573426,
+  American put 6.090333), recomputed independently.
+- **Normal VaR/ES, Kupiec and Christoffersen statistics:** SciPy (`tests/test_var.cpp`,
+  `tests/test_backtest.cpp`).
+- **Market data:** FRED series frozen with SHA-256 checksums (`data/raw/manifest.json`), verified
+  by `tests/test_time_series.cpp`.
+
+**Literature:**
+- Hull, *Options, Futures, and Other Derivatives*.
+- Glasserman (2003), *Monte Carlo Methods in Financial Engineering*, chapters 4 (variance
+  reduction) and 7 (Greeks).
+- Cox, Ross and Rubinstein (1979), *Option pricing: a simplified approach*, JFE 7.
+- Leisen and Reimer (1996), *Binomial models for option valuation — examining and improving
+  convergence*, Applied Mathematical Finance 3(4).
+- Broadie and Detemple (1996), *American option valuation: new bounds, approximations, and a
+  comparison of existing methods*, RFS 9(4).
+- Pelsser and Vorst (1994), *The binomial model and the Greeks*, Journal of Derivatives 1(3).
+- Jäckel (2015), *Let's Be Rational*, Wilmott.
+- Wichura (1988), *Algorithm AS 241: the percentage points of the normal distribution*, Applied
+  Statistics 37(3).
+- Salmon, Moraes, Dror and Shaw (2011), *Parallel random numbers: as easy as 1, 2, 3*.
+- Joe and Kuo (2008), *Constructing Sobol sequences with better two-dimensional projections*,
+  SIAM J. Sci. Comput. 30(5).
+- Owen (1995), *Randomly permuted (t, m, s)-nets and (t, s)-sequences*.
+- Artzner, Delbaen, Eber and Heath (1999), *Coherent measures of risk*, Mathematical Finance 9(3).
+- Kupiec (1995), *Techniques for verifying the accuracy of risk measurement models*, Journal of
+  Derivatives 3(2).
+- Christoffersen (1998), *Evaluating interval forecasts*, International Economic Review 39(4).
+- Basel Committee (1996), *Supervisory framework for the use of backtesting*; BCBS d457 (2019),
+  *Minimum capital requirements for market risk*.
+
+### D. Reproduction
+
+From a clean checkout, with a C++20 compiler, CMake ≥ 3.25 and Python 3 with
+`pip install -r tools/requirements.txt`:
+
+```
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release --target report
+```
+
+The `report` target builds every experiment, runs each from the repository root (some read
+`data/raw`) and renders every figure. Results go to `data/results/` and `docs/figures/`. A result
+committed to the repository must come from a clean tree (`"git_dirty": false` in its metadata).
+
+- **What reproduces exactly.** Every CSV except the timing and efficiency columns of
+  `mc_efficiency` and `greeks_matrix` is a pure function of the code and its seeds. The same results come out, bit
+  for bit, for any thread count and on GCC and Clang on x86-64. Figures are deterministic SVG
+  (fixed hash salt, no timestamp).
+- **Benchmarks.** They are not part of the target, since they measure the machine rather than
+  the code; `bench/README.md` gives the command.
+- **Tests.** `ctest --test-dir build-release` runs the tests the results rely on.
