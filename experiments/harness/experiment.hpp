@@ -167,6 +167,9 @@ public:
     }
 
     const std::string& id() const { return id_; }
+    // Where results go: an experiment that also writes a companion table (e.g. a summary) creates a
+    // second Experiment with its own id in the same directory.
+    const std::filesystem::path& out_dir() const { return out_dir_; }
 
 private:
     std::string id_;
