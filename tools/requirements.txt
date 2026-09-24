@@ -2,3 +2,5 @@
 # Pinned: the committed SVGs are byte-for-byte reproducible only with the same renderer version.
 matplotlib==3.11.2
 mpmath==1.4.1
+# Only for tools/gen_sobol_directions.py, which reads SciPy's copy of the Joe-Kuo direction numbers.
+scipy==1.17.1
