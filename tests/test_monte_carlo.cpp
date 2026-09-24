@@ -2,6 +2,8 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <cmath>
+#include <cstdint>
+#include <stdexcept>
 
 #include "riskengine/methods/analytic/digital.hpp"
 #include "riskengine/methods/analytic/geometric_asian.hpp"
@@ -212,4 +214,14 @@ TEST_CASE("Arithmetic-average digital: call + put pay the discounted unit", "[mc
     const Estimate p = MonteCarlo<GBM, ArithmeticAsianDigitalPayoff>({100.0, OptionType::Put}, Maturity{kMaturity}, cfg)
                            .price(kMarket, SeedKey{28});
     CHECK(std::abs(c.value + p.value - std::exp(-kMarket.rate.value * kMaturity)) <= 1e-12);
+}
+
+TEST_CASE("Randomized QMC rejects more samples than the 32-bit Sobol sequence holds", "[mc][qmc]") {
+    const MonteCarloConfig too_many{.paths = (std::uint64_t{1} << 32) + 1, .sampling = Sampling::RandomizedQmc};
+    CHECK_THROWS_AS((MonteCarlo<GBM, VanillaPayoff>({100.0, OptionType::Call}, Maturity{kMaturity}, too_many)),
+                    std::invalid_argument);
+    MonteCarloConfig antithetic = too_many;
+    antithetic.paths = std::uint64_t{1} << 33; // 2^32 pairs: exactly at the limit
+    antithetic.antithetic = true;
+    CHECK_NOTHROW(MonteCarlo<GBM, VanillaPayoff>({100.0, OptionType::Call}, Maturity{kMaturity}, antithetic));
 }
