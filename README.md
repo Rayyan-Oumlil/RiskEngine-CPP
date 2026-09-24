@@ -58,6 +58,18 @@ cmake --build build-release --target report   # every experiment, then every fig
 
 Everything except the timing columns reproduces bit for bit. Benchmarks: see [`bench/README.md`](bench/README.md).
 
+## Local dashboard
+
+A small HTTP server (`server/`) exposes the pricing engine as JSON, with a static page to drive it — a way to explore the engine interactively instead of reading experiment output. It calls the same tested code as everything else (`black_scholes_price`, `binomial_price`, `MonteCarlo<GBM, VanillaPayoff>`, `heston_price`, `merton_price`, `normal_var_es`); it adds no new pricing logic. Not built by default, since it pulls in two extra dependencies (cpp-httplib, nlohmann_json):
+
+```
+cmake -S . -B build-server -DRISKENGINE_BUILD_SERVER=ON
+cmake --build build-server --target riskengine_server
+build-server/server/riskengine_server   # then open http://localhost:8080
+```
+
+Local only: no live market data, no persistence, no authentication. `POST /price` returns Black-Scholes, both trees, Monte Carlo with its standard error and pathwise delta, and the Heston/Merton prices for one option; `POST /var` returns normal VaR/ES for a given loss mean and standard deviation.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

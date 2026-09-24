@@ -54,3 +54,15 @@ jobs:
         run: cmake --build build --parallel 2
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  build-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug \
+            -DRISKENGINE_BUILD_SERVER=ON -DRISKENGINE_BUILD_TESTS=OFF \
+            -DRISKENGINE_BUILD_EXPERIMENTS=OFF -DRISKENGINE_BUILD_EXAMPLES=OFF
+      - name: Build
+        run: cmake --build build --target riskengine_server --parallel 2

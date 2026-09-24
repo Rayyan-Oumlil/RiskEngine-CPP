@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RiskEngine-CPP — Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #12151c;
+    --border: #232733;
+    --text: #e6e8ee;
+    --muted: #8b91a3;
+    --accent: #5b8cff;
+    --good: #4ade80;
+    --bad: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    padding: 24px;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .layout { display: grid; grid-template-columns: 320px 1fr; gap: 20px; max-width: 1100px; }
+  @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 12px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  input, select {
+    width: 100%;
+    background: #0e1117;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 7px 8px;
+    border-radius: 5px;
+    font-family: inherit;
+    font-size: 13px;
+  }
+  input:focus, select:focus { outline: 1px solid var(--accent); }
+  button {
+    width: 100%;
+    margin-top: 16px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 10px;
+    border-radius: 5px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .row:last-child { border-bottom: none; }
+  .row .label { color: var(--muted); }
+  .row .value { font-weight: 600; }
+  .method-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 900px) { .method-grid { grid-template-columns: 1fr; } }
+  .err { color: var(--bad); font-size: 12px; margin-top: 8px; display: none; }
+  .status { font-size: 11px; padding: 2px 6px; border-radius: 3px; background: #1a1f2b; color: var(--muted); }
+  .status.ok { color: var(--good); }
+  .placeholder { color: var(--muted); font-size: 13px; padding: 40px 0; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>RiskEngine-CPP</h1>
+<div class="subtitle">Local dashboard over the C++ pricing engine — every number below is computed live, no live market data.</div>
+
+<div class="layout">
+  <div class="panel">
+    <h2>Option</h2>
+    <label>Spot (S)</label>
+    <input id="spot" type="number" value="100" step="any">
+    <label>Strike (K)</label>
+    <input id="strike" type="number" value="100" step="any">
+    <label>Volatility (annualized, decimal)</label>
+    <input id="vol" type="number" value="0.20" step="any">
+    <label>Maturity (years)</label>
+    <input id="maturity" type="number" value="1.0" step="any">
+    <label>Risk-free rate (decimal)</label>
+    <input id="rate" type="number" value="0.05" step="any">
+    <label>Dividend yield (decimal)</label>
+    <input id="dividend" type="number" value="0.0" step="any">
+    <label>Type</label>
+    <select id="type">
+      <option value="call">Call</option>
+      <option value="put">Put</option>
+    </select>
+    <label>Exercise</label>
+    <select id="exercise">
+      <option value="european">European</option>
+      <option value="american">American</option>
+    </select>
+    <button id="priceBtn">Price</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="panel" id="results">
+    <h2>Results</h2>
+    <div class="placeholder">Set parameters and click Price.</div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function fmt(x, digits = 6) {
+  if (x === null || x === undefined) return "—";
+  return Number(x).toFixed(digits);
+}
+
+function row(label, value) {
+  return `<div class="row"><span class="label">${label}</span><span class="value">${value}</span></div>`;
+}
+
+async function price() {
+  const btn = $("priceBtn");
+  const err = $("err");
+  err.style.display = "none";
+  btn.disabled = true;
+  btn.textContent = "Pricing…";
+
+  const body = {
+    spot: parseFloat($("spot").value),
+    strike: parseFloat($("strike").value),
+    vol: parseFloat($("vol").value),
+    maturity: parseFloat($("maturity").value),
+    rate: parseFloat($("rate").value),
+    dividend: parseFloat($("dividend").value),
+    type: $("type").value,
+    exercise: $("exercise").value,
+  };
+
+  try {
+    const res = await fetch("/price", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "request failed");
+    render(data);
+  } catch (e) {
+    err.textContent = "Error: " + e.message;
+    err.style.display = "block";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Price";
+  }
+}
+
+function render(d) {
+  const bs = d.black_scholes;
+  const trees = d.trees;
+  const mc = d.monte_carlo;
+  const model = d.model_risk;
+  const iv = d.implied_vol_check;
+
+  let html = `
+  <h2>Results</h2>
+  <div class="method-grid">
+
+    <div>
+      <div class="row"><span class="label" style="text-transform:uppercase;font-weight:600;color:var(--text)">Black-Scholes (closed form)</span></div>
+      ${row("Price", fmt(bs.price))}
+      ${row("Delta", fmt(bs.delta, 4))}
+      ${row("Gamma", fmt(bs.gamma, 4))}
+      ${row("Vega / vol pt", fmt(bs.vega_per_vol_point, 4))}
+      ${row("Theta / day", fmt(bs.theta_per_day, 4))}
+      ${row("Rho", fmt(bs.rho, 4))}
+    </div>
+
+    <div>
+      <div class="row"><span class="label" style="text-transform:uppercase;font-weight:600;color:var(--text)">Binomial trees</span></div>
+      ${row(`CRR (n=${trees.crr.steps})`, fmt(trees.crr.price))}
+      ${row("&nbsp;&nbsp;error vs BS", fmt(trees.crr.error_vs_bs, 6))}
+      ${row(`Leisen-Reimer (n=${trees.leisen_reimer.steps})`, fmt(trees.leisen_reimer.price))}
+      ${row("&nbsp;&nbsp;error vs BS", fmt(trees.leisen_reimer.error_vs_bs, 6))}
+      ${trees.american_bbs_richardson !== undefined ? row("American (BBS-Richardson)", fmt(trees.american_bbs_richardson)) : ""}
+    </div>
+
+    <div>
+      <div class="row"><span class="label" style="text-transform:uppercase;font-weight:600;color:var(--text)">Monte Carlo (antithetic)</span></div>
+      ${row("Price", fmt(mc.price) + " ± " + fmt(mc.std_error))}
+      ${row("Paths", mc.paths.toLocaleString())}
+      ${row("SEs from BS", fmt(mc.standard_errors_from_bs, 2))}
+      ${mc.pathwise_delta ? row("Pathwise delta", fmt(mc.pathwise_delta.value, 4) + " ± " + fmt(mc.pathwise_delta.std_error, 4)) : ""}
+    </div>
+
+    <div>
+      <div class="row"><span class="label" style="text-transform:uppercase;font-weight:600;color:var(--text)">Model risk (same option, different assumptions)</span></div>
+      ${row("Heston (stochastic vol)", fmt(model.heston_cf))}
+      ${row("Merton (jump diffusion)", fmt(model.merton_series))}
+      ${row("&nbsp;&nbsp;Heston − BS", fmt(model.heston_cf - bs.price, 6))}
+      ${row("&nbsp;&nbsp;Merton − BS", fmt(model.merton_series - bs.price, 6))}
+    </div>
+
+  </div>
+
+  <div class="row" style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+    <span class="label">Implied-vol round trip</span>
+    <span class="status ${iv.status === 'ok' ? 'ok' : ''}">${fmt(iv.recovered_vol, 6)} (${iv.status})</span>
+  </div>
+  `;
+
+  $("results").innerHTML = html;
+}
+
+$("priceBtn").addEventListener("click", price);
+document.addEventListener("keydown", (e) => { if (e.key === "Enter") price(); });
+</script>
+</body>
+</html>

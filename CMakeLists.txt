@@ -14,6 +14,7 @@ option(RISKENGINE_BUILD_TESTS "Build test suite" ON)
 option(RISKENGINE_BUILD_BENCH "Build benchmarks" OFF)
 option(RISKENGINE_BUILD_EXPERIMENTS "Build the report experiments" ON)
 option(RISKENGINE_BUILD_EXAMPLES "Build the examples" ON)
+option(RISKENGINE_BUILD_SERVER "Build the local dashboard server (fetches cpp-httplib, nlohmann_json)" OFF)
 
 add_library(riskengine INTERFACE)
 target_include_directories(riskengine INTERFACE
@@ -58,4 +59,8 @@ endif()
 
 if(RISKENGINE_BUILD_BENCH)
   add_subdirectory(bench)
+endif()
+
+if(RISKENGINE_BUILD_SERVER)
+  add_subdirectory(server)
 endif()
