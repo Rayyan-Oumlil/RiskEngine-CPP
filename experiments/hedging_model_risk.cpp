@@ -95,15 +95,16 @@ int main(int argc, char** argv) {
         auto report = [&](const char* world, const std::vector<std::vector<double>>& pnl) {
             for (std::size_t f = 0; f < std::size(kFrequencies); ++f) {
                 std::vector<double> x = pnl[f];
+                const double n = static_cast<double>(x.size());
                 double mean = 0.0;
-                for (double v : x) mean += v / x.size();
+                for (double v : x) mean += v / n;
                 double var = 0.0;
-                for (double v : x) var += (v - mean) * (v - mean) / (x.size() - 1);
+                for (double v : x) var += (v - mean) * (v - mean) / (n - 1.0);
                 std::vector<double> losses(x.size());
                 std::transform(x.begin(), x.end(), losses.begin(), [](double v) { return -v; });
                 const RiskMeasures loss = empirical_var_es(losses, 0.99);
                 std::sort(x.begin(), x.end());
-                csv.row(world, kFrequencies[f], mean, std::sqrt(var), std::sqrt(var / x.size()),
+                csv.row(world, kFrequencies[f], mean, std::sqrt(var), std::sqrt(var / n),
                         x[x.size() / 100], x[x.size() - 1 - x.size() / 100], loss.es);
             }
         };
