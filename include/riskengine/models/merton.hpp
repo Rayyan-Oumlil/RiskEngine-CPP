@@ -31,22 +31,42 @@ struct MertonParams {
 // Merton's series: conditional on n jumps the log spot is Gaussian, so the price is a Poisson
 // mixture of Black-Scholes prices with vol sigma_n^2 = sigma^2 + n jump_sd^2 / T and rate
 // r_n = r - lambda k + n ln(1 + k) / T, weighted by the Poisson(lambda (1 + k) T) probabilities.
-// Summed until the remaining Poisson mass is below 1e-16.
+// Summed until the Poisson weight falls below 1e-17 past the mean: beyond that point the weights
+// shrink faster than geometrically, so the omitted tail is of the same order. (A test on 1 - mass
+// would never trigger: the accumulated mass can round to just below 1.)
 inline double merton_price(OptionType type, double s, double k, double r, double q, double sigma, double t,
                            const MertonParams& p) {
     p.validate();
     const double kbar = p.mean_jump();
     const double intensity = p.lambda * (1.0 + kbar) * t; // lambda' T
-    double weight = std::exp(-intensity), mass = 0.0, price = 0.0;
+    double weight = std::exp(-intensity), price = 0.0;
     for (int n = 0; n < 10000; ++n) {
         if (n > 0) weight *= intensity / n;
         const double sigma_n = std::sqrt(sigma * sigma + n * p.jump_sd * p.jump_sd / t);
         const double r_n = r - p.lambda * kbar + n * std::log1p(kbar) / t;
         price += weight * detail::bs_price(type, s, k, r_n, q, sigma_n, t);
-        mass += weight;
-        if (n > intensity && 1.0 - mass < 1e-16) return price;
+        if (n > intensity && weight < 1e-17) return price;
     }
     throw std::runtime_error("merton_price: Poisson series did not converge");
+}
+
+// Cash-or-nothing digital call paying 1 if S_T > K. Given n jumps (Poisson(lambda T) under the
+// pricing measure), ln S_T is Gaussian with mean ln S + (r - q - lambda k - sigma^2/2) T + n jump_mean
+// and variance sigma^2 T + n jump_sd^2, so the price is e^{-rT} times a Poisson mixture of normal
+// probabilities.
+inline double merton_digital_call(double s, double k, double r, double q, double sigma, double t,
+                                  const MertonParams& p) {
+    p.validate();
+    const double base = std::log(s / k) + (r - q - p.lambda * p.mean_jump() - 0.5 * sigma * sigma) * t;
+    const double intensity = p.lambda * t;
+    double weight = std::exp(-intensity), prob = 0.0;
+    for (int n = 0; n < 10000; ++n) {
+        if (n > 0) weight *= intensity / n;
+        const double sd = std::sqrt(sigma * sigma * t + n * p.jump_sd * p.jump_sd);
+        prob += weight * norm_cdf((base + n * p.jump_mean) / sd);
+        if (n > intensity && weight < 1e-17) return std::exp(-r * t) * prob; // as in merton_price
+    }
+    throw std::runtime_error("merton_digital_call: Poisson series did not converge");
 }
 
 // Exact simulation over any step: the number of jumps N ~ Poisson(lambda dt), their summed log size
