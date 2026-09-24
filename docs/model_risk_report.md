@@ -196,8 +196,9 @@ several orders of magnitude: that is the subject of §6.
 The engine (`methods/montecarlo/engine.hpp`) simulates any `PathModel` (GBM so far, with an exact
 log-space step) for terminal and path-dependent payoffs, discounts, and returns an `Estimate` with its
 standard error. Every experiment below uses the canonical market of §2.1 and its closed-form
-prices as the truth. The European tests hold at 4 standard errors for calls, puts, digitals,
-straddles and geometric Asians, with 1 and 12 time steps (`tests/test_monte_carlo.cpp`).
+prices as the truth. The engine's tests hold at 4 standard errors for calls, puts and digitals
+with 1 and 12 time steps, and for the straddle and the geometric Asian with 12 steps
+(`tests/test_monte_carlo.cpp`).
 
 ### 5.1 The N^{−1/2} rate and interval coverage
 
