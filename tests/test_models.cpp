@@ -12,6 +12,7 @@
 #include "riskengine/models/gbm.hpp"
 #include "riskengine/models/heston.hpp"
 #include "riskengine/models/merton.hpp"
+#include "riskengine/payoffs/digital.hpp"
 #include "riskengine/payoffs/vanilla.hpp"
 
 using namespace riskengine;
@@ -116,6 +117,10 @@ TEST_CASE("Merton series prices match the 30-digit reference", "[merton]") {
         CHECK(std::abs(call / c.call - 1.0) < 1e-12);
         CHECK(std::abs(call - put - (c.s * std::exp(-c.q * c.t) - c.k * std::exp(-c.r * c.t))) < 1e-11 * c.s);
     }
+    // Rare jumps (lambda' T = 0.25): the series must still terminate (it once waited for the summed
+    // Poisson mass to reach 1 within 1e-16, which rounding can prevent).
+    CHECK(std::isfinite(merton_price(OptionType::Call, 100, 100, 0.05, 0.0, 0.2, 1.0, {0.25, -0.2, 0.1})));
+    CHECK(std::isfinite(merton_digital_call(100, 100, 0.05, 0.0, 0.2, 1.0, {0.25, -0.2, 0.1})));
     // No jumps: Black-Scholes, exactly.
     const MarketState m{Spot{100}, Rate{0.05}, Rate{0.0}, Vol{0.2}};
     const VanillaOption call{Strike{110}, Maturity{1}, OptionType::Call};
@@ -134,6 +139,20 @@ TEST_CASE("Merton exact simulation agrees with the series, over one step or many
         const Estimate e = mc.price(m, SeedKey{7});
         CHECK(std::abs(e.value - c.call) < 4.0 * e.std_error);
     }
+}
+
+TEST_CASE("Merton digital: series against simulation, and Black-Scholes without jumps", "[merton][montecarlo]") {
+    const MertonCase& c = kMerton[0];
+    const MertonParams p{c.lambda, c.mu, c.delta};
+    const MarketState m{Spot{c.s}, Rate{c.r}, Rate{c.q}, Vol{c.sigma}};
+    const MonteCarlo<Merton, DigitalPayoff> mc(DigitalPayoff{105.0, OptionType::Call}, Maturity{c.t},
+                                               MonteCarloConfig{.paths = 1u << 18, .threads = 4}, p);
+    const Estimate e = mc.price(m, SeedKey{11});
+    CHECK(std::abs(e.value - merton_digital_call(c.s, 105.0, c.r, c.q, c.sigma, c.t, p)) < 4.0 * e.std_error);
+    // lambda = 0: e^{-rT} N(d2).
+    const double d2 = (std::log(100.0 / 105.0) + (0.05 - 0.02) * 1.0) / 0.2;
+    CHECK(std::abs(merton_digital_call(100, 105, 0.05, 0.0, 0.2, 1.0, {0.0, -0.1, 0.15}) -
+                   std::exp(-0.05) * norm_cdf(d2)) < 1e-15);
 }
 
 TEST_CASE("Poisson inversion has the right mean and variance", "[merton]") {
