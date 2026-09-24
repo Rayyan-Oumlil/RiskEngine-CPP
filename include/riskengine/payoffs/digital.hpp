@@ -11,9 +11,14 @@ struct DigitalPayoff {
     double strike;
     OptionType type;
 
-    double operator()(double s) const {
-        return (type == OptionType::Call ? s > strike : s < strike) ? 1.0 : 0.0;
+    template <class T>
+    T operator()(const T& s) const {
+        return T((type == OptionType::Call ? s > strike : s < strike) ? 1.0 : 0.0);
     }
+
+    // Zero almost everywhere: the jump at the strike is invisible to a pathwise derivative, which
+    // is why the pathwise digital delta converges, confidently, to 0 (report 6).
+    double derivative(double) const { return 0.0; }
 };
 
 } // namespace riskengine
