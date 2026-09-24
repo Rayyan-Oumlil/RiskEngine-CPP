@@ -12,8 +12,10 @@
 namespace riskengine {
 
 // A control variate X is evaluated on the same fixings as the payoff Y and must have a known
-// discounted expectation mu = E[e^{-rT} X]. The engine then averages Y - beta (X - mu), with the
-// variance-minimizing beta = Cov(Y, X) / Var(X) estimated on an independent pilot run.
+// discounted expectation mu = E[e^{-rT} X] under the model being simulated: a control whose mu is
+// exact only for some models is only valid with those (see each control below). The engine then
+// averages Y - beta (X - mu), with the variance-minimizing beta = Cov(Y, X) / Var(X) estimated on
+// an independent pilot run.
 template <class C>
 concept ControlVariate = requires(const C& c, std::span<const double> fixings, const MarketState& m, Maturity t,
                                   std::uint32_t steps) {
@@ -34,7 +36,8 @@ struct TerminalSpotControl {
 };
 
 // X = geometric-average Asian payoff on the same fixings, whose price is known in closed form under
-// GBM. Correlation with the arithmetic Asian is typically above 0.99.
+// GBM only: use it with the GBM model (under Heston or Merton its mu would be wrong and the price
+// biased). Correlation with the arithmetic Asian is typically above 0.99.
 struct GeometricAsianControl {
     double strike;
     OptionType type;

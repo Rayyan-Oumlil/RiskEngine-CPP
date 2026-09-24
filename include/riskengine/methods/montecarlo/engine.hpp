@@ -37,6 +37,9 @@ inline constexpr std::uint32_t kPilotStreamBit = 0x8000'0000u;
 // the average of a path and its reflection, so the standard error accounts for their correlation.
 // With a control variate X of known mean mu, the samples are Y - beta (X - mu), where beta is
 // estimated on an independent pilot run (estimating it on the same paths would bias the price).
+// Because the pilot is independent, the estimate is unbiased for any beta, and the reported
+// standard error is the one conditional on the pilot's beta; the sampling error of beta itself
+// only affects the variance at second order.
 // The price is a pure function of (market, key, paths, steps, blocks, pilot_paths).
 template <PathModel Model, class Payoff, class Control = NoControl>
     requires(TerminalPayoff<Payoff> || PathPayoff<Payoff>) &&
