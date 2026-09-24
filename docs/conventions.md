@@ -65,8 +65,42 @@ In that branch:
 - **No `-ffast-math`** in reference builds. Tests compare floating-point results with relative
   tolerances, never exact equality, except where the result is exact by construction.
 
+## Randomness and reproducibility
+
+- **Generator:** Philox 4x32-10 (`core/rng/philox.hpp`), checked against the Random123
+  known-answer vectors at compile time. Draw *i* of block *b* is Philox(key = seed,
+  counter = (i, b, stream)); there is no generator state to share or advance.
+- **`SeedKey{seed, stream}`** identifies a random experiment. A stochastic pricer is a pure
+  function of (market, key): re-running with the same key after a bump gives exact common random
+  numbers. Use a different `stream` for an independent sub-simulation (e.g. a pilot run).
+- **Uniforms** are the midpoints (k + ½)·2⁻⁵² of a 2⁵² grid: never 0 or 1, and 1 − u is exact.
+- **Normals** come from the inverse CDF (Wichura AS241, `core/rng/normal_icdf.hpp`), never from
+  `std::normal_distribution` (implementation-defined) or Box-Muller (breaks quasi-random points).
+  Because the grid is symmetric, `normal(1 − u) == −normal(u)` exactly.
+- **Blocks:** simulations are cut into a fixed number of blocks (`BlockPlan::blocks`, default 64),
+  merged with Welford/Chan in block order. The result depends on the seed, the sample count and the
+  block count, and **never** on the thread count.
+- **What is bit-identical where:** uniforms, on every platform (integer arithmetic only). Normals
+  and everything downstream, across thread counts always, and across GCC and Clang on Linux (same
+  libm; `-ffp-contract=off` forbids silent FMA fusion). MSVC's `log`/`exp` may differ in the last
+  ulp, so on MSVC the golden normals are checked to a few ulps and the exact simulation golden
+  value is skipped (its statistical check still runs).
+
+## Experiments
+
+Each executable in `experiments/` produces one figure or table of the report:
+`data/results/<id>.csv` (full-precision `%.17g`, `\n` line endings) and `<id>.meta.json` (git
+commit and dirty flag, compiler, build type, flags, parameters, UTC time). Results committed to the
+repository must come from a Release build of a clean, committed tree (`"git_dirty": false`).
+`tools/make_figures.py` turns them into `docs/figures/<id>.svg`.
+
 ## Reference values
 
-`tools/bs_reference.py` regenerates the reference vectors used in `tests/test_black_scholes.cpp`
-with mpmath at 50 digits. The Greeks there are numerical derivatives of the high-precision price,
-so they check the closed-form formulas independently.
+Reference values are generated independently of the code under test, with mpmath
+(`pip install -r tools/requirements.txt`):
+
+- `tools/bs_reference.py`: Black-Scholes prices and Greeks at 50 digits for
+  `tests/test_black_scholes.cpp`. The Greeks are numerical derivatives of the high-precision price,
+  so they check the closed-form formulas independently.
+- `tools/normal_icdf_reference.py`: the inverse normal CDF at 60 digits by bisection, for
+  `tests/test_rng.cpp`.
