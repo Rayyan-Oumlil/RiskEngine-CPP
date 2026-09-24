@@ -1,13 +1,13 @@
 {
   "experiment": "lsm_convergence",
-  "git_commit": "74f3c51b103f0f75d5e9aa20c4ce1c41d028d0a7",
-  "git_dirty": true,
+  "git_commit": "7d88cb886b576c8be20d75f22944fa370e988c7e",
+  "git_dirty": false,
   "compiler": "GNU 15.2.0",
   "build_type": "Release",
   "cxx_flags": "-O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off -fno-builtin-exp -fno-builtin-log -fno-builtin-erfc -fno-builtin-pow",
   "cpu": "unknown",
   "hardware_threads": 12,
-  "created_utc": "2026-09-24T23:36:41Z",
+  "created_utc": "2026-09-24T23:37:14Z",
   "parameters": {
     "payoff": "American put, K = 100, T = 1",
     "market": "S = 100, r = 0.05, q = 0, sigma = 0.2",
