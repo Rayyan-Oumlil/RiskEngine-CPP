@@ -39,6 +39,7 @@ set(RISKENGINE_EXPERIMENTS
   greeks_vs_h
   greeks_vs_n
   greeks_matrix
+  var_straddle
 )
 
 foreach(experiment IN LISTS RISKENGINE_EXPERIMENTS)
