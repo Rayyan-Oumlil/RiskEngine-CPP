@@ -1,7 +1,7 @@
 # RiskEngine-CPP — Numerical-method, risk-measure and model risk report
 
-> **Status:** in progress. §2 and §3 are written (Phases 1 and 2). The other sections are filled
-> in as the phases of the plan land ([`riskengine_research.md`](riskengine_research.md) §12).
+> **Status:** in progress. §2, §3 and §5.1–5.2 are written (Phases 1, 2 and 4). The other sections
+> are filled in as the phases of the plan land ([`riskengine_research.md`](riskengine_research.md) §12).
 >
 > **Editorial rules.** Every figure has a self-contained caption (*what it shows*, then *why it
 > matters*). Every number points to the CSV or test that produced it. Every stochastic estimate is
@@ -73,7 +73,7 @@ configuration, flags, parameters, date. Committed results come from a Release bu
 ```
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release
-build-release/experiments/fd_vcurve && build-release/experiments/iv_roundtrip
+for e in fd_vcurve iv_roundtrip mc_convergence mc_coverage mc_efficiency; do build-release/experiments/$e; done
 python3 tools/make_figures.py        # pip install -r tools/requirements.txt
 ```
 
@@ -193,7 +193,95 @@ several orders of magnitude: that is the subject of §6.
 
 ## 5. Monte Carlo: convergence and variance reduction
 
-*To be written in Phase 4.*
+The engine (`methods/montecarlo/engine.hpp`) simulates any `PathModel` (GBM so far, with an exact
+log-space step) for terminal and path-dependent payoffs, discounts, and returns an `Estimate` with its
+standard error. Every experiment below uses the canonical market of §2.1 and its closed-form
+prices as the truth. The European tests hold at 4 standard errors for calls, puts, digitals,
+straddles and geometric Asians, with 1 and 12 time steps (`tests/test_monte_carlo.cpp`).
+
+### 5.1 The N^{−1/2} rate and interval coverage
+
+![Standard error and actual error of the Monte Carlo price against the number of paths](figures/mc_convergence.svg)
+
+*Figure 3 — Monte Carlo price of the canonical ATM call with N = 2¹⁰ to 2²² paths (an independent
+seed for each N): standard error and actual error against Black-Scholes. **What it shows:** the
+standard error falls as N^{−1/2} (fitted slope −0.5004), and the actual error scatters below and
+around it, within 1.55 standard errors at every N. **Why it matters:** the rate is the textbook one,
+so any faster apparent convergence in later sections has to come from variance reduction, not luck.*
+Source: [`data/results/mc_convergence.csv`](../data/results/mc_convergence.csv).
+
+A slope proves the standard error has the right *rate*. It does not prove it has the right *size*.
+For that, 1,000 independent pricings (10,000 paths each) of the ATM call and of an out-of-the-money
+digital (K = 130) were compared with their exact prices.
+
+![Histograms of the z-scores of 1,000 independent Monte Carlo prices against the standard normal density](figures/mc_coverage.svg)
+
+*Figure 4 — z-scores (estimate − exact) / SE of 1,000 independent pricings, against the N(0, 1)
+density. **What it shows:** 94.5 % (call) and 95.7 % (digital) of the 95 % confidence intervals
+contain the exact price, against 95 % ± 0.69 % expected; the z-scores have standard deviation 1.04
+and 1.00. **Why it matters:** the error bars reported with every Monte Carlo number in this report
+are neither optimistic nor conservative, including for the skewed Bernoulli payoff of a digital.*
+Source: [`data/results/mc_coverage.csv`](../data/results/mc_coverage.csv).
+
+### 5.2 Efficiency table, failures included
+
+Techniques are compared by **efficiency = 1 / (variance per path × CPU time per path)**, relative to
+plain Monte Carlo on the same payoff. "Variance per path" charges each technique for every path it
+simulates (an antithetic pair counts as two). Times are single-threaded, the minimum of three runs,
+and include the pilot run that estimates the control-variate coefficient. 10⁶ paths per row.
+
+| Payoff | Technique | Variance per path | ns per path | Efficiency vs plain |
+|---|---|---|---|---|
+| ATM call | plain | 215.8 | 38.0 | 1 |
+| | antithetic | 108.0 | 24.0 | 3.2 |
+| | S_T control | 31.5 | 36.1 | 7.2 |
+| | antithetic + S_T control | 7.6 | 24.4 | **44** |
+| Deep ITM call, K = 70 | plain | 397.4 | 25.7 | 1 |
+| | antithetic | 23.1 | 17.6 | 25 |
+| | S_T control | 0.98 | 27.2 | 385 |
+| | antithetic + S_T control | 0.43 | 19.9 | **1,209** |
+| Far OTM call, K = 160 | plain | 3.43 | 26.2 | 1 |
+| | antithetic | 3.51 | 18.5 | 1.4 |
+| | S_T control | 3.11 | 28.8 | **1.0** |
+| ATM straddle | plain | 174.6 | 38.8 | 1 |
+| | antithetic | 287.7 | 25.6 | **0.92** |
+| Arithmetic Asian, ATM, 12 fixings | plain | 72.4 | 242.5 | 1 |
+| | antithetic | 34.8 | 148.7 | 3.4 |
+| | geometric control | 0.056 | 299.3 | **1,038** |
+| | antithetic + geometric control | 0.061 | 215.4 | 1,335 |
+
+Source: [`data/results/mc_efficiency.csv`](../data/results/mc_efficiency.csv) (timings on the CPU
+recorded in its metadata; all estimates are within 2 standard errors of the exact price where one
+exists).
+
+**Antithetic variates** pair each path with its reflection Z → −Z. The variance per path becomes
+σ²(1 + ρ), where ρ is the correlation between the two halves of a pair. For a payoff monotone in Z,
+ρ < 0: the ATM call halves its variance, and the deep ITM call, which is almost linear in S_T, cuts it
+17-fold. They also save time: a pair reuses its normals, and the inverse normal is the dominant cost.
+**Where they fail:** the ATM straddle |S_T − K| is nearly even in Z, so ρ > 0 and the variance per path
+*rises* by 65 %; only the cheaper draws keep the efficiency at 0.92. Far out of the money, almost no
+path pays off in either half of a pair, ρ ≈ 0, and the only gain left is the saved draws (1.4×).
+
+**Control variates** subtract β(X − E[X]) with β estimated on an independent pilot run. The variance
+falls by a factor 1 − ρ²_YX. The terminal spot is an excellent control for a deep ITM call, which is
+nearly S_T − K (385×). **Where it fails:** for the call struck at 160, the payoff is zero on most paths
+where S_T varies most, the correlation collapses, and the gain is exactly nothing (1.0×). The
+geometric-average Asian, whose price is known in closed form, is so close to the arithmetic one
+that the variance falls by a factor of 1,300 and the efficiency by more than 1,000 even after paying
+for the pilot and the extra logarithms.
+
+**Variance reduction beats parallelism.** On this 4-thread machine, perfect parallel scaling would
+give at most 4×. The combined techniques give 44× on the ATM call and over 1,000× on the ITM call and
+the Asian, from mathematics alone, and they compose with threading since the engine's result is
+independent of the thread count.
+
+*Timing note.* The plain ATM call costs 38 ns per path but the deep ITM and far OTM calls only
+26 ns, for the same arithmetic: at the money, the branch in max(0, S_T − K) is a coin flip and
+mispredicts half the time. This is why efficiencies are only compared within a payoff.
+
+### 5.3 Randomized quasi-Monte Carlo
+
+*To be written with the Sobol / Owen-scrambling extension of Phase 4.*
 
 ## 6. Greek estimation under noise *(flagship section)*
 
