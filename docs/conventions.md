@@ -15,8 +15,10 @@ library takes or returns follows the units below; the strong typedefs in
 | Maturity | `Maturity` | years | `Maturity{0.25}` |
 
 **Time.** Maturities are year fractions. When converting from days, use ACT/365 for calendar days
-(`days / 365.0`). The 252-trading-day convention is reserved for scaling daily risk horizons
-(Phase 6) and must be stated wherever it is used.
+(`days / 365.0`). The 252-trading-day convention is reserved for risk horizons: a one-day
+risk horizon is 1/252 of a year, for the diffusion (σ√Δt) and for the time decay of the book
+alike, so that a one-day loss never mixes trading and calendar time. Option maturities stay in
+calendar time (a 30-day option has T = 30/365).
 
 ## Greeks
 
@@ -103,6 +105,17 @@ Each executable in `experiments/` produces one figure or table of the report:
 commit and dirty flag, compiler, build type, flags, parameters, UTC time). Results committed to the
 repository must come from a Release build of a clean, committed tree (`"git_dirty": false`).
 `tools/make_figures.py` turns them into `docs/figures/<id>.svg`.
+
+## Market data
+
+Historical series (NASDAQ Composite, VIX, VXO, 3-month T-bill yield) come from FRED and are
+**frozen** in `data/raw/` by `tools/fetch_data.py`, byte for byte as served, with
+`data/raw/manifest.json` recording the URL, extraction time, SHA-256 and date range of each file
+(checked by `tests/test_time_series.cpp`). Experiments never download anything; refreshing the data
+is a deliberate commit that changes the manifest. Days without a value (FRED's `.`) are skipped;
+the index and vol series are joined on common dates and the rate is taken as of each date, since
+its calendar differs; a rate or vol quoted in percent is divided by 100 at the point of use. Implied volatility is proxied by the VIX (VXO before 1990): real historical option
+chains are not freely available, so the option books of report §7 are hypothetical.
 
 ## Reference values
 
