@@ -1,6 +1,7 @@
 # Writes the current git commit and dirty state into a header. Runs at build time (see
 # experiments/CMakeLists.txt) so the recorded commit is never stale; configure_file only touches
-# the output when its content changes, so an unchanged commit does not trigger rebuilds.
+# the output when its content changes, so an unchanged commit does not trigger rebuilds. "Dirty"
+# includes untracked, non-ignored files: an unadded source file also breaks reproducibility.
 execute_process(
   COMMAND git rev-parse HEAD
   WORKING_DIRECTORY "${SOURCE_DIR}"
@@ -13,7 +14,7 @@ if(NOT git_result EQUAL 0)
 endif()
 
 execute_process(
-  COMMAND git status --porcelain --untracked-files=no
+  COMMAND git status --porcelain
   WORKING_DIRECTORY "${SOURCE_DIR}"
   OUTPUT_VARIABLE git_status
   ERROR_QUIET)

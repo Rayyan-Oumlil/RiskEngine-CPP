@@ -1,3 +1,4 @@
 # Python tools: reference values (mpmath) and report figures (matplotlib).
-matplotlib>=3.8
-mpmath>=1.3
+# Pinned: the committed SVGs are byte-for-byte reproducible only with the same renderer version.
+matplotlib==3.11.2
+mpmath==1.4.1
