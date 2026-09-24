@@ -1,0 +1,19 @@
+{
+  "experiment": "mc_efficiency",
+  "git_commit": "86942a1c332b3dc066b17c7c345241689dbcd2fd",
+  "git_dirty": false,
+  "compiler": "GNU 13.3.0",
+  "build_type": "Release",
+  "cxx_flags": "-O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off",
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "hardware_threads": 4,
+  "created_utc": "2026-09-24T01:49:47Z",
+  "parameters": {
+    "market": "S = 100, r = 0.05, q = 0, sigma = 0.2, T = 1",
+    "paths": 1000000,
+    "threads": 1,
+    "timing": "min of 3 runs, steady_clock, pilot run included",
+    "seed": "SeedKey{2026} for every row",
+    "pilot_paths": 10000
+  }
+}
