@@ -24,4 +24,15 @@ inline double digital_delta(const VanillaOption& o, const MarketState& m) {
     return o.type == OptionType::Call ? delta : -delta;
 }
 
+// d2V/dS2 = -+e^{-rT} n(d2) d1 / (S^2 sigma^2 T): the call's slope peaks at the strike and changes
+// sign there. 0 in the degenerate case, like the delta.
+inline double digital_gamma(const VanillaOption& o, const MarketState& m) {
+    const double s = m.spot.value;
+    const detail::BsTerms b = detail::bs_terms(s, o.strike.value, m.rate.value, m.div.value, m.vol.value,
+                                               o.maturity.value);
+    if (b.degenerate) return 0.0;
+    const double gamma = -b.df_r * b.pdf_d2 * b.d1 / (s * s * b.sigma_sqrt_t * b.sigma_sqrt_t);
+    return o.type == OptionType::Call ? gamma : -gamma;
+}
+
 } // namespace riskengine
