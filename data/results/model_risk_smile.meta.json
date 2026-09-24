@@ -1,0 +1,14 @@
+{
+  "experiment": "model_risk_smile",
+  "git_commit": "8ceb7c6e875da26a929e305136605ad82edee7c2",
+  "git_dirty": false,
+  "compiler": "GNU 13.3.0",
+  "build_type": "Release",
+  "cxx_flags": "-O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off -fno-builtin-exp -fno-builtin-log -fno-builtin-erfc -fno-builtin-pow",
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "hardware_threads": 4,
+  "created_utc": "2026-09-24T05:09:43Z",
+  "parameters": {
+    "source": "model_risk_exotics (same calibration)"
+  }
+}
