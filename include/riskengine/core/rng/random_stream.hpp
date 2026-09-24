@@ -15,8 +15,9 @@ struct SeedKey {
     std::uint32_t stream = 0;
 };
 
-// The random sequence of one block of paths. Draw i of block b is Philox(key = seed,
-// counter = (i, b, stream)): blocks never share state, so they can run on any thread in any order.
+// The random sequence of one block of paths. Philox call j of block b uses key = seed and
+// counter = (j, b, stream), and its 128 bits give uniforms 2j and 2j + 1 of the block. Blocks never
+// share state, so they can run on any thread in any order.
 class RandomStream {
 public:
     RandomStream(SeedKey key, std::uint32_t block)
