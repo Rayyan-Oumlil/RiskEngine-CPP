@@ -13,6 +13,7 @@ option(RISKENGINE_ENABLE_SANITIZERS "Build with ASan/UBSan" OFF)
 option(RISKENGINE_BUILD_TESTS "Build test suite" ON)
 option(RISKENGINE_BUILD_BENCH "Build benchmarks" OFF)
 option(RISKENGINE_BUILD_EXPERIMENTS "Build the report experiments" ON)
+option(RISKENGINE_BUILD_EXAMPLES "Build the examples" ON)
 
 add_library(riskengine INTERFACE)
 target_include_directories(riskengine INTERFACE
@@ -49,6 +50,10 @@ endif()
 
 if(RISKENGINE_BUILD_EXPERIMENTS)
   add_subdirectory(experiments)
+endif()
+
+if(RISKENGINE_BUILD_EXAMPLES)
+  add_subdirectory(examples)
 endif()
 
 if(RISKENGINE_BUILD_BENCH)
