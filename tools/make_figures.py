@@ -267,6 +267,49 @@ def greeks_vs_n(path, meta, out):
     plt.close(fig)
 
 
+def var_straddle(path, meta, out):
+    import math
+
+    rows = read_rows(path)
+    labels = {
+        ("delta_normal", "spot"): "delta-normal",
+        ("delta_gamma_normal", "spot"): "delta-gamma normal",
+        ("delta_gamma_cornish_fisher", "spot"): "delta-gamma Cornish-Fisher",
+        ("full_revaluation_mc", "spot"): "full revaluation, MC, spot",
+        ("full_revaluation_mc", "spot+vol"): "full revaluation, MC, spot + vol",
+        ("historical_rescaled_to_20pct", "spot"): "historical, rescaled to 20 % vol, spot",
+        ("historical", "spot"): "historical, spot",
+        ("historical", "spot+vol"): "historical, spot + vol",
+    }
+    order = list(labels)
+    rows = sorted(rows, key=lambda r: order.index((r["method"], r["risk_factors"])))
+    fig, ax = plt.subplots(figsize=(7.4, 4.4))
+    y = list(range(len(rows)))[::-1]
+    for key, low, high, color, name, dy in (("var99", "var99_low", "var99_high", SERIES[0], "VaR 99 %", 0.14),
+                                            ("es975", "es975_low", "es975_high", SERIES[1], "ES 97.5 %", -0.14)):
+        xs, ys, errs_lo, errs_hi = [], [], [], []
+        for r, yy in zip(rows, y):
+            v = float(r[key])
+            if math.isnan(v):
+                continue
+            lo, hi = float(r[low]), float(r[high])
+            xs.append(v)
+            ys.append(yy + dy)
+            errs_lo.append(0.0 if math.isnan(lo) else v - lo)
+            errs_hi.append(0.0 if math.isnan(hi) else hi - v)
+        ax.errorbar(xs, ys, xerr=[errs_lo, errs_hi], fmt="o", color=color, ecolor=color, elinewidth=1.5,
+                    capsize=3, markersize=6, markeredgecolor=SURFACE, label=name)
+    ax.set_yticks(y)
+    ax.set_yticklabels([labels[(r["method"], r["risk_factors"])] for r in rows])
+    ax.set_xlabel("one-day loss of the book (per straddle, spot 100)")
+    ax.set_title("One-day risk of a hedged short straddle, by method", loc="left")
+    ax.legend(loc="upper right", frameon=True, facecolor=SURFACE, edgecolor="none", framealpha=1.0)
+    ax.set_xlim(left=-0.1)
+    fig.tight_layout()
+    fig.savefig(out, metadata={"Date": None})
+    plt.close(fig)
+
+
 # Each renderer takes (csv path, metadata dict, output path). Experiments without an entry (tables)
 # are reported directly from their CSV.
 FIGURES = {
@@ -277,6 +320,7 @@ FIGURES = {
     "qmc_convergence": qmc_convergence,
     "greeks_vs_h": greeks_vs_h,
     "greeks_vs_n": greeks_vs_n,
+    "var_straddle": var_straddle,
 }
 
 
