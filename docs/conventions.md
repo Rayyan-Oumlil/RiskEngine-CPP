@@ -58,8 +58,9 @@ In that branch:
 - **Normal CDF:** N(x) = `0.5 * erfc(-x / sqrt(2))`. N(−x) is computed the same way, never as
   1 − N(x), which loses all relative precision in the tails.
 - **Implied vol** is solved on the out-of-the-money quote (put-call parity) with Brent's method in
-  log price. An in-the-money quote can only determine the vol to about ε·price / vega, because the
-  time value sits next to a much larger intrinsic value. A price below the discounted forward
+  log price. A quote only determines the vol to about ε·(1 + d²)·(a + b) / (σ·vega) relative, where
+  a − b is the price formula; for an in-the-money quote the time value sits next to a much larger
+  intrinsic value and this bound becomes large (report §3.1). A price below the discounted forward
   intrinsic value (beyond rounding) or at or above the upper bound is reported through
   `ImpliedVolStatus`, never as a number.
 - **No `-ffast-math`** in reference builds. Tests compare floating-point results with relative

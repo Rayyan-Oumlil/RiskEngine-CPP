@@ -31,6 +31,7 @@ target_link_libraries(riskengine_harness INTERFACE riskengine)
 
 set(RISKENGINE_EXPERIMENTS
   fd_vcurve
+  iv_roundtrip
 )
 
 foreach(experiment IN LISTS RISKENGINE_EXPERIMENTS)
