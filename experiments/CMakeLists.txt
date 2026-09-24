@@ -36,6 +36,9 @@ set(RISKENGINE_EXPERIMENTS
   mc_coverage
   mc_efficiency
   qmc_convergence
+  greeks_vs_h
+  greeks_vs_n
+  greeks_matrix
 )
 
 foreach(experiment IN LISTS RISKENGINE_EXPERIMENTS)
