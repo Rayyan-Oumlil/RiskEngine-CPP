@@ -1,6 +1,6 @@
 {
   "experiment": "mc_coverage",
-  "git_commit": "3a447c244a3a3149df5a66150334bd06e5afea07",
+  "git_commit": "e50cea2395f4075d01a5c1d7844ffd88dd3d3727",
   "git_dirty": false,
   "compiler": "GNU 13.3.0",
   "build_type": "Release",

@@ -1,6 +1,6 @@
 {
   "experiment": "greeks_matrix",
-  "git_commit": "3bad092b3a7601c6d73d41b0cea664a80958d324",
+  "git_commit": "3c36c7974b1dd6249a280461b01445011c482fb0",
   "git_dirty": false,
   "compiler": "GNU 13.3.0",
   "build_type": "Release",

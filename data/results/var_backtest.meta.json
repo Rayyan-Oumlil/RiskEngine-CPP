@@ -1,6 +1,6 @@
 {
   "experiment": "var_backtest",
-  "git_commit": "cee5caebe62fbb732854c93e77fc4f249e82c055",
+  "git_commit": "bfd0687dc62edd08bc13e2879cd942e7ac1a1eb9",
   "git_dirty": false,
   "compiler": "GNU 13.3.0",
   "build_type": "Release",
