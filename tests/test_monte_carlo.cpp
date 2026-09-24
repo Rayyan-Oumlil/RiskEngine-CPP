@@ -202,3 +202,14 @@ TEST_CASE("Randomized QMC is thread-invariant and composes with antithetic and c
                              .price(kMarket, SeedKey{27});
     CHECK(std::abs(one.value - ref.value) < 4.0 * std::hypot(one.std_error, ref.std_error));
 }
+
+TEST_CASE("Arithmetic-average digital: call + put pay the discounted unit", "[mc]") {
+    // The two digitals partition the paths (the average never equals K exactly), so their sum on
+    // the same paths is e^{-rT} to rounding: a structural check of the payoff.
+    const MonteCarloConfig cfg{.paths = 20'000, .steps = 12, .threads = 2};
+    const Estimate c = MonteCarlo<GBM, ArithmeticAsianDigitalPayoff>({100.0, OptionType::Call}, Maturity{kMaturity}, cfg)
+                           .price(kMarket, SeedKey{28});
+    const Estimate p = MonteCarlo<GBM, ArithmeticAsianDigitalPayoff>({100.0, OptionType::Put}, Maturity{kMaturity}, cfg)
+                           .price(kMarket, SeedKey{28});
+    CHECK(std::abs(c.value + p.value - std::exp(-kMarket.rate.value * kMaturity)) <= 1e-12);
+}
