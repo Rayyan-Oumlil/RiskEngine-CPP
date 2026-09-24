@@ -13,6 +13,7 @@ add_executable(riskengine_tests
     test_analytic_exotics.cpp
     test_rng.cpp
     test_simulation.cpp
+    test_monte_carlo.cpp
 )
 target_link_libraries(riskengine_tests PRIVATE riskengine Catch2::Catch2WithMain)
 
