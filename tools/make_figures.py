@@ -153,6 +153,48 @@ def mc_coverage(path, meta, out):
     plt.close(fig)
 
 
+def log_slope(xs, ys):
+    """Least-squares slope of log(ys) against log(xs)."""
+    import math
+
+    lx, ly = [math.log(x) for x in xs], [math.log(y) for y in ys]
+    mx, my = sum(lx) / len(lx), sum(ly) / len(ly)
+    return sum((a - mx) * (b - my) for a, b in zip(lx, ly)) / sum((a - mx) ** 2 for a in lx)
+
+
+def qmc_convergence(path, meta, out):
+    rows = read_rows(path)
+    panels = [("atm_call", "ATM call (1-D, kink)"), ("digital_k130", "Digital, K = 130 (1-D, jump)"),
+              ("asian_12", "Arithmetic Asian (12-D, kink)"),
+              ("asian_digital_12", "Digital on the average (12-D, jump)")]
+    methods = [("pseudo_random", "pseudo-random"), ("rqmc", "RQMC"), ("rqmc_bridge", "RQMC + bridge")]
+    fig, axes = plt.subplots(2, 2, figsize=(7.4, 6.0))
+    for ax, (problem, title) in zip(axes.flat, panels):
+        for (method, label), color in zip(methods, SERIES + ["#1baf7a"]):
+            pts = [(float(r["paths"]), float(r["sd_single_estimate"])) for r in rows
+                   if r["problem"] == problem and r["method"] == method]
+            if not pts:
+                continue
+            n, sd = zip(*pts)
+            slope = log_slope(n, sd)
+            ax.loglog(n, sd, color=color, linewidth=2, marker="o", markersize=3.5, label=label)
+            ax.annotate(f"{slope:+.2f}", (n[-1], sd[-1]), xytext=(4, 0), textcoords="offset points",
+                        va="center", color=INK_SECONDARY, fontsize=9)
+        ax.set_title(title, loc="left", fontsize=10)
+        ax.set_xlim(right=2 ** 16 * 2.2)
+    for ax in axes[1]:
+        ax.set_xlabel("points per estimate N")
+    for ax in axes[:, 0]:
+        ax.set_ylabel("sd of one estimate")
+    fig.legend(*axes[1, 0].get_legend_handles_labels(), loc="upper center", ncol=3, frameon=False,
+               bbox_to_anchor=(0.5, 1.0))
+    fig.suptitle("Labels: fitted slope of the error in N (pseudo-random: −0.5)", y=0.035, fontsize=9,
+                 color=MUTED)
+    fig.tight_layout(rect=(0, 0.03, 1, 0.95))
+    fig.savefig(out, metadata={"Date": None})
+    plt.close(fig)
+
+
 # Each renderer takes (csv path, metadata dict, output path). Experiments without an entry (tables)
 # are reported directly from their CSV.
 FIGURES = {
@@ -160,6 +202,7 @@ FIGURES = {
     "iv_roundtrip": iv_roundtrip,
     "mc_convergence": mc_convergence,
     "mc_coverage": mc_coverage,
+    "qmc_convergence": qmc_convergence,
 }
 
 
