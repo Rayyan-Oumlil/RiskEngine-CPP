@@ -50,6 +50,7 @@ plt.rcParams.update({
 
 
 def read_csv(path):
+    """Numeric CSV as a dict of columns."""
     with open(path, newline="") as f:
         rows = list(csv.DictReader(f))
     return {key: [float(row[key]) for row in rows] for key in rows[0]}
@@ -107,10 +108,58 @@ def iv_roundtrip(path, meta, out):
     plt.close(fig)
 
 
-# Each renderer takes (csv path, metadata dict, output path).
+def mc_convergence(path, meta, out):
+    data = read_csv(path)
+    n, se, err = data["paths"], data["std_error"], data["abs_error"]
+    fig, ax = plt.subplots(figsize=(7.0, 4.2))
+    ax.loglog(n, se, color=SERIES[0], linewidth=2, marker="o", markersize=5, label="standard error")
+    ax.loglog(n, err, color=SERIES[1], linewidth=0, marker="o", markersize=6, markeredgecolor=SURFACE,
+              label="|estimate − Black-Scholes|")
+    # Reference slope, drawn a factor 3 below the data so it does not hide the SE line.
+    ref = [se[0] / 3 * (x / n[0]) ** -0.5 for x in (n[0], n[-1])]
+    ax.loglog([n[0], n[-1]], ref, color=MUTED, linewidth=1, linestyle=(0, (4, 3)))
+    ax.annotate(r"reference slope $-1/2$", (n[-1], ref[-1]), xytext=(0, -16), textcoords="offset points",
+                color=MUTED, ha="right")
+    ax.set_xlabel("paths N")
+    ax.set_ylabel("price error")
+    ax.set_title(r"Monte Carlo on an ATM call: error and SE fall as $N^{-1/2}$", loc="left")
+    ax.legend(loc="upper right", frameon=True, facecolor=SURFACE, edgecolor="none", framealpha=1.0)
+    fig.tight_layout()
+    fig.savefig(out, metadata={"Date": None})
+    plt.close(fig)
+
+
+def mc_coverage(path, meta, out):
+    import math
+
+    rows = read_rows(path)
+    panels = [("atm_call", "ATM call"), ("otm_digital_k130", "OTM digital, K = 130")]
+    fig, axes = plt.subplots(1, 2, figsize=(7.0, 3.4), sharey=True)
+    grid = [-4 + 0.05 * i for i in range(161)]
+    bins = [-4.5 + 0.5 * i for i in range(19)]
+    for ax, (key, title) in zip(axes, panels):
+        z = [float(r["z_score"]) for r in rows if r["payoff"] == key]
+        covered = sum(int(r["covered_95"]) for r in rows if r["payoff"] == key)
+        ax.hist(z, bins=bins, density=True, color=SERIES[0], edgecolor=SURFACE, linewidth=2)
+        ax.plot(grid, [math.exp(-x * x / 2) / math.sqrt(2 * math.pi) for x in grid], color=INK_SECONDARY,
+                linewidth=1.5, linestyle=(0, (4, 3)), label="N(0, 1)")
+        ax.set_title(f"{title}: {covered / len(z):.1%} of 95 % CIs cover", loc="left", fontsize=10)
+        ax.set_xlabel("z = (estimate − exact) / SE")
+        ax.set_xlim(-4.5, 4.5)
+    axes[0].set_ylabel("density")
+    axes[0].legend(loc="upper left")
+    fig.tight_layout()
+    fig.savefig(out, metadata={"Date": None})
+    plt.close(fig)
+
+
+# Each renderer takes (csv path, metadata dict, output path). Experiments without an entry (tables)
+# are reported directly from their CSV.
 FIGURES = {
     "fd_vcurve": lambda path, meta, out: fd_vcurve(read_csv(path), meta, out),
     "iv_roundtrip": iv_roundtrip,
+    "mc_convergence": mc_convergence,
+    "mc_coverage": mc_coverage,
 }
 
 
