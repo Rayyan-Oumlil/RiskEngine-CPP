@@ -42,6 +42,8 @@ set(RISKENGINE_EXPERIMENTS
   var_straddle
   var_backtest
   stress_scenarios
+  tree_convergence
+  tree_greeks
 )
 
 foreach(experiment IN LISTS RISKENGINE_EXPERIMENTS)
