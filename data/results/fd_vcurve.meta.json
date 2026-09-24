@@ -1,0 +1,21 @@
+{
+  "experiment": "fd_vcurve",
+  "git_commit": "6d6e4b128c20becf355b69784ed02afe6aee144f",
+  "git_dirty": false,
+  "compiler": "GNU 13.3.0",
+  "build_type": "Release",
+  "cxx_flags": "-O3 -DNDEBUG",
+  "created_utc": "2026-09-24T01:17:00Z",
+  "parameters": {
+    "spot": 100,
+    "strike": 100,
+    "rate": 0.050000000000000003,
+    "dividend_yield": 0,
+    "vol": 0.20000000000000001,
+    "maturity": 1,
+    "exact_delta": 0.6368306511756191,
+    "exact_gamma": 0.018762017345846895,
+    "machine_epsilon": 2.2204460492503131e-16,
+    "h_grid": "10^(k/8) for k = -112..-8"
+  }
+}
