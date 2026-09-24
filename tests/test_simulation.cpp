@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "riskengine/core/simulation.hpp"
+#include "riskengine/core/stats/covariance.hpp"
 
 using namespace riskengine;
 
@@ -118,4 +119,37 @@ TEST_CASE("An exception in a block is propagated after all threads stop", "[simu
         return Welford{};
     };
     CHECK_THROWS_AS(reduce_blocks(plan, failing), std::runtime_error);
+}
+
+TEST_CASE("Covariance matches a two-pass computation and merges as one stream", "[covariance]") {
+    std::vector<double> xs, ys;
+    RandomStream rng(SeedKey{9}, 0);
+    for (int i = 0; i < 5'001; ++i) {
+        const double x = 100.0 + rng.normal();
+        xs.push_back(x);
+        ys.push_back(0.5 * x + rng.normal());
+    }
+    Covariance all, left, right;
+    for (std::size_t i = 0; i < xs.size(); ++i) {
+        all.add(xs[i], ys[i]);
+        (i < 2'000 ? left : right).add(xs[i], ys[i]);
+    }
+    const double n = static_cast<double>(xs.size());
+    double mx = 0.0, my = 0.0;
+    for (std::size_t i = 0; i < xs.size(); ++i) {
+        mx += xs[i] / n;
+        my += ys[i] / n;
+    }
+    double cxy = 0.0, vx = 0.0;
+    for (std::size_t i = 0; i < xs.size(); ++i) {
+        cxy += (xs[i] - mx) * (ys[i] - my) / (n - 1);
+        vx += (xs[i] - mx) * (xs[i] - mx) / (n - 1);
+    }
+    CHECK(std::abs(all.covariance() - cxy) <= 1e-10 * std::abs(cxy));
+    CHECK(std::abs(all.variance_x() - vx) <= 1e-10 * vx);
+    left.merge(right);
+    CHECK(left.count() == all.count());
+    CHECK(std::abs(left.covariance() - all.covariance()) <= 1e-10 * std::abs(cxy));
+    CHECK(std::abs(left.variance_x() - all.variance_x()) <= 1e-10 * vx);
+    CHECK(Covariance{}.covariance() == 0.0);
 }
