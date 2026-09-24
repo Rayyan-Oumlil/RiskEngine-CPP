@@ -53,7 +53,7 @@ To regenerate the report's results and figures (Release build of a clean tree; P
 
 ```
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
-cmake --build build-release --target report   # every experiment, then every figure (~2.5 min)
+cmake --build build-release --target report   # every experiment, then every figure (~5 min)
 ```
 
 Everything except the timing columns reproduces bit for bit. Benchmarks: see [`bench/README.md`](bench/README.md).

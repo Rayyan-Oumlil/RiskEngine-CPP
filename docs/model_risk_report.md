@@ -173,7 +173,7 @@ cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release --target report   # every experiment, then every figure
 ```
 
-A full regeneration takes about 2.5 minutes on the machine of §9. It reproduces every committed CSV
+A full regeneration takes about 5 minutes on the machine of §9. It reproduces every committed CSV
 and SVG bit for bit, except the timing and efficiency columns of `mc_efficiency` and
 `greeks_matrix` (Appendix D).
 
