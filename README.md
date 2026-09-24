@@ -8,7 +8,7 @@ This is not "a pricer." Black-Scholes, CRR, and Monte Carlo under GBM are three 
 - **Model risk**, properly scoped — genuine model risk requires different *assumptions* (stochastic volatility, jumps), not just different numerical schemes. This project is honest about that distinction rather than dressing up numerical-method risk as something bigger.
 - **Where risk measures disagree** — parametric (delta-normal) VaR is structurally blind to gamma risk; historical and Monte Carlo VaR are not. Demonstrated on a real short-gamma position, not asserted.
 
-The deliverable is [`docs/model_risk_report.md`](docs/model_risk_report.md) (written up as each phase lands) — the code exists to produce that report's numbers, not the other way around.
+The deliverable is [`docs/model_risk_report.md`](docs/model_risk_report.md) — the code exists to produce that report's numbers, not the other way around. For a guided tour of everything that was built, see [`docs/showcase.md`](docs/showcase.md); for a first run, `build/examples/quickstart` prices one option by every method in the library.
 
 ## Why three methods on purpose
 
