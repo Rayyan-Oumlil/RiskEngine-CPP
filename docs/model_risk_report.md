@@ -601,13 +601,13 @@ passing a coverage test on average does not protect against the days that matter
 [`data/results/var_backtest.csv`](../data/results/var_backtest.csv).
 
 - **The model-based methods fail coverage outright.** Delta-normal and delta-gamma are in the red
-  zone every single year. Monte Carlo on spot alone is exceeded 6.7 % of the time, almost seven
-  times the nominal rate, and **95 % of its exceptions fall on days when the VIX rose**, against
+  zone in every one of the 34 non-overlapping windows of 250 trading days. Monte Carlo on spot alone
+  is exceeded 6.7 % of the time, almost seven times the nominal rate, and **95 % of its exceptions fall on days when the VIX rose**, against
   46 % of all days: the missing risk is the vega of §7.3, not the gamma, which it prices exactly.
   Its exceptions are nevertheless close to independent (p = 0.16), because the forecast follows
   the implied vol day by day.
 - **Historical simulation passes on average and fails in time.** It is exceeded 118 times against
-  87 expected: only 2 of 34 years are red, but Kupiec still rejects at the 1 % level, and
+  87 expected: only 2 of the 34 windows are red, but Kupiec still rejects at the 1 % level, and
   Christoffersen rejects independence strongly (p = 3 × 10⁻⁵). The exceptions cluster: 14 in the
   seven months of the 2008 crisis and 7 in ten weeks of 2020, when a well-calibrated 99 % VaR would
   have given one or two. A 500-day window carries a crisis only once it has happened, and carries
