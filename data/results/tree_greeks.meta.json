@@ -1,0 +1,18 @@
+{
+  "experiment": "tree_greeks",
+  "git_commit": "3c7d35285f2dbb8cd6b9e42c50e5dfdb0c96b22d",
+  "git_dirty": false,
+  "compiler": "GNU 13.3.0",
+  "build_type": "Release",
+  "cxx_flags": "-O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off -fno-builtin-exp -fno-builtin-log -fno-builtin-erfc -fno-builtin-pow",
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "hardware_threads": 4,
+  "created_utc": "2026-09-24T04:07:26Z",
+  "parameters": {
+    "market": "S = 100, r = 0.05, q = 0, sigma = 0.2, T = 1",
+    "reference": "Black-Scholes (European); extended BBS tree at n = 32768 (American put)",
+    "american_put_reference_delta": -0.41106013309990369,
+    "american_put_reference_gamma": 0.022988343273841864,
+    "american_put_reference_theta": -2.2378429761738516
+  }
+}
