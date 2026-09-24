@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -113,9 +114,15 @@ inline double backward_induction(const VanillaOption& o, Exercise ex, const Latt
         for (unsigned j = 0; j <= n; ++j) v[j] = intrinsic(spot(n, j));
     }
     const double pu = l.discount * l.p, pd = l.discount * (1.0 - l.p);
+    // Far out of the money, node values decay geometrically through the subnormal range, where
+    // arithmetic is up to ~100 times slower on x86: a European call at n = 10,000 took 9 times
+    // longer than its O(n^2) cost predicts (report 9). Such a value cannot move a price above
+    // 1e-300, so it is flushed to zero.
+    constexpr double kTiny = std::numeric_limits<double>::min();
     for (unsigned i = top; i-- > 0;) {
         for (unsigned j = 0; j <= i; ++j) {
             v[j] = pu * v[j + 1] + pd * v[j];
+            if (v[j] < kTiny) v[j] = 0.0;
             if (american) v[j] = std::max(v[j], intrinsic(spot(i, j)));
         }
         if (i == 2 && nodes) {
