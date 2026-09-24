@@ -1,8 +1,8 @@
 # RiskEngine-CPP — Numerical-method, risk-measure and model risk report
 
-> **Status:** complete for Phases 0 to 6 and 8 of the plan
-> ([`riskengine_research.md`](riskengine_research.md) §12). Phase 7 (model risk: Heston, Merton) was
-> not built; §8 states that scope explicitly.
+> **Status:** complete: every phase of the plan
+> ([`riskengine_research.md`](riskengine_research.md) §12), including the optional model-risk phase
+> (Heston and Merton, §8).
 >
 > **Editorial rules.** Every figure has a self-contained caption (*what it shows*, then *why it
 > matters*). Every number points to the CSV or test that produced it. Every stochastic estimate is
@@ -13,8 +13,9 @@
 
 This report validates a C++20 pricing and risk engine: one model (Black-Scholes-Merton dynamics)
 priced by three numerical methods (closed form, binomial trees, Monte Carlo) and used for Greeks
-and risk measures. Every figure is regenerated from a committed experiment, and every stochastic
-number carries its error bar. Its four main findings:
+and risk measures, then two alternative models (Heston, Merton) to measure model risk. Every figure
+is regenerated from a committed experiment, and every stochastic number carries its error bar. Its
+five main findings:
 
 1. **Greeks: the most dangerous failures are the silent ones (§6).** On a digital option, the
    pathwise delta converges with complete confidence to the wrong answer: 0 with a standard error
@@ -51,8 +52,19 @@ number carries its error bar. Its four main findings:
      wrong, and an implied vol backed out of a deep in-the-money quote loses up to 5.7 % to the
      rounding of the quote.
 
-The engine reproduces every result bit for bit, for any thread count and on GCC and Clang. Model
-risk in the strict sense (stochastic volatility, jumps) was not covered (§8).
+5. **Model risk: one at-the-money price does not identify a model (§8).**
+   - Black-Scholes, Heston and Merton are calibrated to the same one-year at-the-money call. Yet
+     they disagree by up to 146 % on an 80 put and by 108 % on an up-and-out barrier, while a
+     monthly Asian moves by 2 %.
+   - A Black-Scholes delta hedge whose error shrinks as the square root of the rebalancing
+     interval in its own world stalls, in the Heston and Merton worlds, at a standard deviation of
+     2.8–2.9 per option, whatever the frequency. The 99 % ES of the loss is 12–15, more than the
+     premium.
+   - Under Heston with Feller's condition violated, a full-truncation Euler price at 320 steps is
+     still 27 standard errors (2 %) off at the money and 15 % off at K = 140. Andersen's QE scheme
+     is within about 2 standard errors from 80 steps.
+
+The engine reproduces every result bit for bit, for any thread count and on GCC and Clang.
 
 ---
 
@@ -68,7 +80,7 @@ not a finding. The report studies three distinct sources of error, and never con
 |---|---|---|
 | **Numerical-method risk** | For a given model, how fast and how reliably does each method converge, and where does a naive implementation break without warning? | §3–§6 |
 | **Risk-measure risk** | For a given position and history, why do two reasonable risk measures give radically different answers? | §7 |
-| **Model risk** | What happens when the dynamics themselves change while the vanilla prices stay the same? | §8 (not covered) |
+| **Model risk** | What happens when the dynamics themselves change while the vanilla prices stay the same? | §8 |
 
 The guiding principle: **the risk of a number is a property of the number, not of the code.**
 - A Monte Carlo price without a standard error is not a result.
@@ -91,8 +103,8 @@ version.
   stress-tested on six historical crises.
 
 **Not claimed:**
-- **No model risk.** No stochastic volatility, no jumps (§8), and no calibration to a volatility
-  smile.
+- **Limited model risk.** Two alternative models (Heston, Merton, §8), calibrated to one
+  at-the-money price rather than to a market smile. No local volatility, no stochastic rates.
 - **Hypothetical option books.** They are priced from index levels and the VIX, not from
   historical option chains, which are not freely available.
 - **Single-machine timings.** The performance figures of §9 belong to one virtual machine.
@@ -887,31 +899,177 @@ factor of the book, and read the factor split to see which Greek the loss comes 
 
 ## 8. Model risk beyond GBM
 
-**Not covered.** The plan made this phase (Heston and Merton models, Phase 7) the first extension
-to cut ([`riskengine_research.md`](riskengine_research.md) §12.1). It was not built. This report
-demonstrates **numerical-method risk and risk-measure risk**; **model risk in the strict sense is
-identified as future work**. Every result above holds *within* GBM, and none of them shows what
-changes when the dynamics do.
+Sections 3 to 7 hold *within* GBM: they measure how well numerical methods and risk measures do
+their job when the dynamics are known. This section changes the dynamics. Two alternatives are
+implemented next to GBM:
 
-The report nevertheless contains three pieces of evidence that the dynamics matter, each measured
-with the risk-measure machinery rather than with an alternative model:
-- **§7.3:** real NASDAQ returns rescaled to the same 20 % vol give a 99 % VaR 58 % above the GBM
-  one. That excess is fat tails, which GBM cannot produce.
-- **§7.3–7.4:** implied vol moves with the market (correlation −0.75 with the index). Leaving it
-  out halves the VaR of a short straddle and puts a GBM-based VaR in the Basel red zone in 29 of
-  the 34 windows of 250 days.
-- **§7.5:** the vol-only component of the 1987 crash is 25.1 per straddle, larger than any spot
-  move. No constant-vol model can generate it.
+- **Heston** (`models/heston.hpp`): stochastic variance with mean reversion, vol of vol and a
+  spot–variance correlation.
+  - It is priced by its characteristic function in the "little trap" form of Albrecher et al.
+    (2007), which stays continuous at long maturities.
+  - It is simulated by Andersen's (2008) QE scheme, with full-truncation Euler as the naive
+    alternative.
+- **Merton** (`models/merton.hpp`): GBM plus lognormal jumps. It is priced by its Poisson series
+  of Black-Scholes prices and simulated exactly.
 
-**What the missing phase would add** (plan §7.2). Implementation notes: Heston by Andersen's QE
-scheme, with the Albrecher et al. characteristic function; Merton by its series of Black-Scholes
-prices. Three experiments:
-1. **Same at-the-money price, diverging exotics.** Calibrate BS, Heston and Merton to the same
-   at-the-money price, then price an out-of-the-money call, a digital and a barrier.
-2. **Hedging in the wrong world.** Delta-hedge with the Black-Scholes delta in a Heston or Merton
-   world, as a function of the rebalancing frequency.
-3. **Error decomposition under Heston.** Separate the discretization bias from the statistical
-   error. The `Estimate::discretization` field is reserved for it.
+The tests (`tests/test_models.cpp`) check the closed forms against an independent 30-digit mpmath
+reference (`tools/model_reference.py`):
+- the Heston call and digital prices agree to 10⁻¹⁰ and the Merton series to 10⁻¹²;
+- Andersen's case I gives 13.08467, his published value;
+- Heston without vol of vol reduces to Black-Scholes at the integrated variance, at the expected
+  O(ξ) rate;
+- simulation matches the closed forms within 4 standard errors for both models (the plan's
+  Phase 7 gate).
+
+The three models are **calibrated to the same one-year at-the-money call**, the 20 % Black-Scholes
+price of 10.4506 (S = K = 100, r = 5 %, q = 0). Each keeps a fixed shape:
+- **Heston:** κ = 1.5, ξ = 0.6, ρ = −0.7, with v₀ = θ = 0.04661 solved for the price. Feller's
+  condition fails, as it usually does for calibrated equity parameters.
+- **Merton:** 0.25 jumps a year of mean size e^{−0.2}, with the diffusion vol solved: 17.13 %.
+
+The Monte Carlo engine was extended so that a model can carry its own parameters. GBM results are
+unchanged bit for bit.
+
+### 8.1 Common calibration, diverging exotics
+
+![One-year implied volatility smiles of the three models calibrated to the same at-the-money price](figures/model_risk_smile.svg)
+
+*Figure 13 — One-year implied volatility against strike for Black-Scholes, Heston and Merton,
+calibrated to the same at-the-money price (circled). **What it shows:**
+- all three agree on the one number they were fitted to;
+- Heston produces a steep skew, from 29 % at K = 70 to 15 % at K = 130;
+- Merton produces a milder one, from 23 % to 19 %.
+
+**Why it matters:** an at-the-money quote does not identify a model. Everything priced away from
+it inherits the difference.* Source:
+[`data/results/model_risk_smile.csv`](../data/results/model_risk_smile.csv).
+
+| Product (T = 1, S = 100) | Black-Scholes | Heston | Merton |
+|---|---|---|---|
+| ATM call (the calibration) | 10.451 | 10.451 | 10.451 |
+| Put, K = 80 | 0.687 | 1.688 (**+146 %**) | 0.933 (+36 %) |
+| Call, K = 120 | 3.247 | 1.765 (−46 %) | 2.949 (−9 %) |
+| Digital call, K = 100 | 0.532 | 0.639 (+20 %) | 0.555 (+4 %) |
+| Up-and-out call, K = 100, B = 130, daily | 3.554 ± 0.006 | 7.397 ± 0.008 (**+108 %**) | 4.225 ± 0.007 (+19 %) |
+| Down-and-in put, K = 100, B = 80, daily | 3.816 ± 0.008 | 4.904 ± 0.011 (+28 %) | 3.967 ± 0.009 (+4 %) |
+| Asian call, K = 100, 12 monthly fixings | 6.160 ± 0.008 | 6.279 ± 0.007 (+2 %) | 6.100 ± 0.008 (−1 %) |
+
+Vanillas and digitals are closed-form prices. Path-dependent products are Monte Carlo prices
+(2²⁰ paths, 252 daily steps, Heston by QE) with their standard errors. Every Monte Carlo price
+of a product with a closed form lies within 2.0 standard errors of it. Source:
+[`data/results/model_risk_exotics.csv`](../data/results/model_risk_exotics.csv).
+
+**Mechanism.**
+- **Heston's skew.** The correlation ρ = −0.7 makes volatility rise when the spot falls. Low
+  strikes are therefore priced with high vol: the 80 put costs 2.5 times its Black-Scholes price.
+  High strikes are priced with low vol: the 120 call costs about half.
+- **The digital** is the negative strike-derivative of the call price, so it is priced by the
+  *slope* of the smile at the money. The skew adds 20 %.
+- **The up-and-out call doubles** under Heston. The paths that rise towards the barrier do so
+  with falling volatility, so they knock out less often than Black-Scholes assumes. The barrier is
+  a bet on the joint behaviour of spot and vol, which the at-the-money price says nothing about.
+- **Merton** spreads its skew over rare downward jumps, so its differences are of the same sign
+  but smaller.
+- **The monthly Asian barely moves** (+2 %, −1 %). An average depends mostly on the at-the-money
+  volatility that the calibration pins down.
+
+**Remedy.**
+- Calibrate to the instruments that span the exotic's risk: the smile for digitals and barriers,
+  not the at-the-money point.
+- Price every exotic under at least two models calibrated to the same market. Their disagreement
+  is the model-risk reserve.
+- An exotic whose price moves little across models (the Asian here) is well identified by its
+  hedges. One that doubles (the barrier) is not.
+
+### 8.2 Hedging P&L in a misspecified world
+
+![Standard deviation of the delta-hedging P&L against rebalancing frequency in three worlds](figures/hedging_model_risk.svg)
+
+*Figure 14 — Standard deviation of the P&L of a short one-year ATM call, sold at the common price
+and delta-hedged with the Black-Scholes delta at 20 %, against the number of rebalances a year.
+20,000 paths per world, the same paths for every frequency. **What it shows:** in the
+Black-Scholes world the hedging error halves each time the frequency quadruples. In the Heston and
+Merton worlds it stops falling at about 2.8–2.9, over a quarter of the premium, whatever the
+frequency. **Why it matters:** hedging more often cannot fix a hedge built on the wrong model.*
+Source: [`data/results/hedging_model_risk.csv`](../data/results/hedging_model_risk.csv).
+
+| World | sd, 16 / 63 / 252 / 1,008 rebalances a year | 1 % quantile at 1,008 | 99 % ES of the loss at 1,008 |
+|---|---|---|---|
+| Black-Scholes | 1.60 / 0.82 / 0.415 / 0.208 | −0.55 | 0.69 |
+| Heston | 3.53 / 3.10 / 2.96 / 2.92 | −9.99 | 12.5 |
+| Merton | 3.09 / 2.87 / 2.79 / 2.78 | −12.2 | 15.3 |
+
+The mean P&L is zero within 1.7 standard errors in every cell. The premium is fair in every world
+by construction, and gains on the hedge of a discounted martingale have zero expectation. What
+differs is the spread.
+
+**Mechanism.**
+- **Black-Scholes world.** The hedging error comes only from discrete rebalancing. It shrinks as
+  the square root of the interval: ratios 1.94, 1.98 and 1.99 for each factor of 4.
+- **Heston world.** A continuously rebalanced delta hedge at the implied volatility still leaves
+  ½∫Γ S² (σ²_implied − v_t) dt. That is the gap between implied and realized variance, weighted by
+  gamma, and it depends on the variance path rather than on the rebalancing.
+- **Merton world.** A jump moves the spot before the hedge can react; the short-gamma position
+  loses on every large jump, whichever its sign. The distribution is lopsided:
+  - between jumps, the premium charged at 20 % against a 17.1 % diffusion leaves small, regular
+    gains (99 % quantile +2.0);
+  - the rare jumps give large losses (1 % quantile −12.2, ES 15.3, more than the premium).
+
+**Remedy.**
+- **Stochastic volatility:** hedge the residual vega/variance risk with a second option or a
+  variance swap. Delta hedging alone leaves it open.
+- **Jumps:** hedge the gap risk with out-of-the-money options, since a delta hedge cannot.
+- **Reserves:** size them on the P&L distribution under the alternative model (a 99 % ES of 12–15
+  per option here), not on the Black-Scholes hedging error of 0.7.
+
+### 8.3 Discretization bias against statistical error
+
+![Absolute bias of QE and full-truncation Euler against the time step, with the statistical error band](figures/heston_discretization.svg)
+
+*Figure 15 — Absolute bias of the Monte Carlo price against the exact characteristic-function
+price, for QE and full-truncation Euler, against the time step, with 2 standard errors of 2²¹
+paths shaded. Hollow markers are not significant. **What it shows:**
+- when Feller's condition holds, both schemes are unbiased within noise from dt = 1/16;
+- when it fails badly (Andersen's case I, T = 10), QE's bias is within about 2 standard errors
+  from dt = 1/8;
+- Euler is still 27 standard errors off at dt = 1/32, and 15 % off on the 140 call.
+
+**Why it matters:** a Monte Carlo error bar says nothing about the discretization bias. A price can
+be precise to 0.01 and wrong by 0.26.* Source:
+[`data/results/heston_discretization.csv`](../data/results/heston_discretization.csv).
+
+| Case (exact price) | Scheme | Bias at dt = 1/4 | at 1/8 | at 1/32 |
+|---|---|---|---|---|
+| Feller holds, T = 1, K = 100 (10.394) | QE | +0.013 (1.5 SE) | +0.021 (2.4 SE) | −0.008 (0.9 SE) |
+| | Euler | +0.071 (8.2 SE) | +0.031 (3.7 SE) | −0.006 (0.7 SE) |
+| Feller fails, T = 10, K = 100 (13.085) | QE | +0.043 (4.7 SE) | −0.020 (2.2 SE) | +0.004 (0.5 SE) |
+| | Euler | **+2.04 (+16 %)** | +1.05 (+8 %) | **+0.26 (+2 %, 27 SE)** |
+| Feller fails, T = 10, K = 140 (0.296) | QE | −0.004 (2.3 SE) | +0.001 (0.4 SE) | +0.001 (0.6 SE) |
+| | Euler | +0.76 (+257 %) | +0.27 (+93 %) | **+0.043 (+15 %, 23 SE)** |
+
+The standard error is 0.009 at the money and 0.002 at K = 140, for 2²¹ paths. Each step size uses
+its own seed. A first run with one seed for every step size made the rows share most of their
+normals, so one unlucky sample (−3σ) looked like a bias. Tested on 2²² paths with another seed, it
+vanished.
+
+**Mechanism.**
+- **Why Euler fails.** When Feller's condition fails, the variance spends long stretches near
+  zero. Euler's Gaussian step overshoots below zero there, and truncating it at zero biases the
+  variance upwards.
+- **Why the bias is large.** With ρ = −0.9 and ξ = 1 over ten years, that excess variance
+  fattens the right tail of the spot and inflates the call prices. The bias falls only as dt, and
+  the 140 call is off by 15 % even at 320 steps.
+- **Why QE works.** It samples the variance step from a distribution matching the first two
+  moments of the exact transition. That includes a mass at zero, so the variance reaches zero
+  when it should, and never goes negative.
+
+**Remedy.**
+- Never trust a Monte Carlo price under Heston by its standard error alone. Measure the bias
+  against the characteristic function (or against a halved step) and report both.
+- Use QE or another moment-matching or exact scheme, never Euler, when Feller's condition fails,
+  which calibrated parameters usually do.
+- The `Estimate::discretization` field, reserved since Phase 2, is where such a measured bias
+  belongs.
 
 ## 9. Engineering and performance notes
 
@@ -1021,12 +1179,17 @@ claims to do, or than a cheaper operation it contains, is a bug until proven oth
 ## 10. Limitations and future work
 
 **Model and instruments.**
-- Everything is under GBM with a flat volatility and flat rates: no smile, no term structure, no
-  discrete dividends.
+- Sections 3 to 7 are under GBM with a flat volatility and flat rates: no smile, no term structure,
+  no discrete dividends.
+- Model risk (§8) compares Heston and Merton to GBM after calibrating all three to one
+  at-the-money price. A calibration to a full market smile, local volatility (Dupire) and
+  stochastic-local volatility are not covered.
 - The American option is only a put or call on a tree. Other gaps:
   - no least-squares Monte Carlo (Longstaff-Schwartz);
-  - no barrier options, so no discrete-monitoring correction (Broadie-Glasserman-Kou);
-  - no model risk at all (§8).
+  - barriers only by daily-monitored Monte Carlo (§8.1), with no continuity correction
+    (Broadie-Glasserman-Kou);
+  - no QE martingale correction (Andersen 2008, §4): the small drift it would remove is inside
+    the measured bias of §8.3.
 
 **Numerical methods.**
 - **Implied vol.** A bracketed Brent solver on the log price, at 570–650 ns per quote. Jäckel's
@@ -1110,11 +1273,21 @@ mechanism and its evidence in the section cited.
     late, not right (§7.4).
 11. Complement VaR with joint historical stress scenarios shocking every factor of the book (§7.5).
 
+**Model risk**
+
+12. Calibrate to the instruments that span an exotic's risk (the smile for digitals and
+    barriers). Price every exotic under at least two models calibrated to the same market, and
+    hold their disagreement as a model reserve (§8.1).
+13. Size hedging reserves on the P&L distribution under an alternative model: rebalancing faster
+    does not reduce vol-of-vol or jump risk (§8.2).
+14. Under Heston, measure the discretization bias against the characteristic function and report
+    it next to the standard error. Never use Euler when Feller's condition fails (§8.3).
+
 **Engineering**
 
-12. Make results independent of the thread count by fixing the work split. Keep per-thread
+15. Make results independent of the thread count by fixing the work split. Keep per-thread
     accumulators local and written once (§2.2, §9.2–9.3).
-13. Validate what a benchmark computes, not only its time (§9.4).
+16. Validate what a benchmark computes, not only its time (§9.4).
 
 ---
 
@@ -1181,6 +1354,9 @@ parameters, seeds, the git commit, the compiler and flags, and the CPU. This tab
 | `var_straddle` | §7.1–7.3, Figure 10 | VaR and ES by seven methods, bootstrap intervals |
 | `var_backtest` (+ `_summary`) | §7.4, Figure 11 | 8,744-day backtest, Kupiec, Christoffersen, Basel zones |
 | `stress_scenarios` | §7.5, Figure 12 | six historical crises, joint and by factor |
+| `model_risk_exotics` (+ `model_risk_smile`) | §8.1, Figure 13 | calibration to one ATM price; smiles and exotics under three models |
+| `hedging_model_risk` | §8.2, Figure 14 | Black-Scholes delta hedge in three worlds, four frequencies |
+| `heston_discretization` | §8.3, Figure 15 | QE and Euler bias against the characteristic function |
 | `bench/benchmarks.cpp` → `bench.json` | §9 | Google Benchmark, 5 repetitions |
 
 The reference market throughout is S = K = 100, r = 5 %, q = 0, σ = 20 %, T = 1. The
@@ -1200,6 +1376,9 @@ risk-measure book is the 30-day straddle of §7 at the same market. Units follow
   American put 6.090333), recomputed independently.
 - **Normal VaR/ES, Kupiec and Christoffersen statistics:** SciPy (`tests/test_var.cpp`,
   `tests/test_backtest.cpp`).
+- **Heston and Merton prices:** mpmath at 30 digits with adaptive quadrature and exact-arithmetic
+  series (`tools/model_reference.py`, `tests/test_models.cpp`); Andersen's (2008) published price
+  for his case I.
 - **Market data:** FRED series frozen with SHA-256 checksums (`data/raw/manifest.json`), verified
   by `tests/test_time_series.cpp`.
 
@@ -1220,6 +1399,13 @@ risk-measure book is the 30-day straddle of §7 at the same market. Units follow
 - Joe and Kuo (2008), *Constructing Sobol sequences with better two-dimensional projections*,
   SIAM J. Sci. Comput. 30(5).
 - Owen (1995), *Randomly permuted (t, m, s)-nets and (t, s)-sequences*.
+- Heston (1993), *A closed-form solution for options with stochastic volatility*, RFS 6(2).
+- Albrecher, Mayer, Schoutens and Tistaert (2007), *The little Heston trap*, Wilmott.
+- Andersen (2008), *Simple and efficient simulation of the Heston stochastic volatility model*,
+  Journal of Computational Finance 11(3).
+- Lord, Koekkoek and van Dijk (2010), *A comparison of biased simulation schemes for stochastic
+  volatility models*, Quantitative Finance 10(2).
+- Merton (1976), *Option pricing when underlying stock returns are discontinuous*, JFE 3.
 - Artzner, Delbaen, Eber and Heath (1999), *Coherent measures of risk*, Mathematical Finance 9(3).
 - Kupiec (1995), *Techniques for verifying the accuracy of risk measurement models*, Journal of
   Derivatives 3(2).
