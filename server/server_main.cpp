@@ -1,8 +1,12 @@
 // Local HTTP server exposing the pricing engine as JSON endpoints, for the static
 // dashboard in server/static/. Not a production service: no auth, no TLS, no live
 // market data. Run it, then open http://localhost:8080 in a browser.
+#include <algorithm>
+#include <cstddef>
 #include <cstdio>
 #include <exception>
+#include <stdexcept>
+#include <string>
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>
@@ -31,6 +35,18 @@ OptionType parse_option_type(const std::string& s) {
 Exercise parse_exercise(const std::string& s) {
     if (s == "american") return Exercise::American;
     return Exercise::European;
+}
+
+// Reads an integer field, rejecting negative values and clamping to [1, max_value] so a
+// malicious or malformed request can't force an O(n^2) tree induction or a multi-gigabyte
+// Monte Carlo run on the server. Throws (caught by the request handler, returned as a 400)
+// on a value that isn't an integer at all.
+std::size_t bounded_size(const json& body, const char* key, std::size_t default_value, std::size_t max_value) {
+    if (!body.contains(key)) return default_value;
+    const json& v = body.at(key);
+    if (!v.is_number_integer() || v.get<long long>() < 1)
+        throw std::invalid_argument(std::string(key) + " must be a positive integer");
+    return std::min(static_cast<std::size_t>(v.get<long long>()), max_value);
 }
 
 json price_endpoint(const json& body) {
@@ -62,7 +78,11 @@ json price_endpoint(const json& body) {
 
     // Trees. American exercise only makes sense off the European closed form as a reference,
     // so we price both exercise styles here regardless of what the request asked for.
-    const unsigned n = static_cast<unsigned>(body.value("tree_steps", 1000));
+    // Capped at 20,000: the tree's backward induction is O(n^2), so an unbounded n from the
+    // request could hang the server (docs/riskengine_research.md 3.2 uses 20,000 as its own
+    // reference size, so this ceiling still covers every documented result).
+    constexpr std::size_t kMaxTreeSteps = 20'000;
+    const unsigned n = static_cast<unsigned>(bounded_size(body, "tree_steps", 1000, kMaxTreeSteps));
     const double crr = binomial_price(TreeMethod::Crr, option, Exercise::European, market, n);
     const unsigned lr_n = n % 2 == 0 ? n + 1 : n; // Leisen-Reimer requires an odd step count
     const double lr = binomial_price(TreeMethod::LeisenReimer, option, Exercise::European, market, lr_n);
@@ -71,12 +91,13 @@ json price_endpoint(const json& body) {
         {"leisen_reimer", {{"price", lr}, {"steps", lr_n}, {"error_vs_bs", lr - bs}}},
     };
     if (exercise == Exercise::American) {
-        const unsigned an = static_cast<unsigned>(body.value("american_steps", 2000));
+        const unsigned an = static_cast<unsigned>(bounded_size(body, "american_steps", 2000, kMaxTreeSteps));
         out["trees"]["american_bbs_richardson"] = binomial_price(TreeMethod::BbsRichardson, option, Exercise::American, market, an);
     }
 
-    // Monte Carlo: price with an honest standard error, plus a pathwise delta.
-    const auto paths = static_cast<std::size_t>(body.value("mc_paths", 1 << 18));
+    // Monte Carlo: price with an honest standard error, plus a pathwise delta. Capped at 2^22
+    // paths (~4M) so one request can't force a multi-gigabyte, multi-minute simulation.
+    const std::size_t paths = bounded_size(body, "mc_paths", 1 << 18, std::size_t{1} << 22);
     const MonteCarlo<GBM, VanillaPayoff> mc(VanillaPayoff{strike, type}, Maturity{maturity},
                                             MonteCarloConfig{.paths = paths, .threads = 4, .antithetic = true});
     const Estimate mc_est = mc.price(market, SeedKey{2026});
@@ -127,8 +148,6 @@ json var_endpoint(const json& body) {
 int main() {
     httplib::Server svr;
 
-    svr.set_default_headers({{"Access-Control-Allow-Origin", "*"}});
-
     svr.Post("/price", [](const httplib::Request& req, httplib::Response& res) {
         try {
             const json result = price_endpoint(json::parse(req.body));
@@ -151,7 +170,10 @@ int main() {
 
     svr.set_mount_point("/", RISKENGINE_STATIC_DIR);
 
+    // Loopback only: this is a local tool with no authentication. Binding wider would expose
+    // an unauthenticated service (and, combined with permissive CORS, invite DNS-rebinding
+    // attacks from any page open in a browser on this machine) to the whole LAN.
     std::printf("RiskEngine-CPP dashboard: http://localhost:8080\n");
-    svr.listen("0.0.0.0", 8080);
+    svr.listen("127.0.0.1", 8080);
     return 0;
 }
