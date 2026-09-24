@@ -436,8 +436,8 @@ Each phase has a **validation gate** and **feeds a section of the report**. A ph
 | Phase | Content | Validation gate | Report | Indicative duration (part-time) |
 |---|---|---|---|---|
 | **0** ✅ | Scaffold: CMake, CI, `Pricer` concept | CI green on 3 compilers | — | done |
-| **1** | BS with dividend, closed-form Greeks, implied vol, `conventions.md` | Canonical vector to 1e-9, parity to 1e-14, implied-vol round trip over the whole grid, edge cases without NaN | §3 | 1 wk |
-| **2** | Philox, inverse normal, `Estimate`, Welford, ordered reduction, experiment harness | Statistical RNG tests; bit-identical result with 1/2/8 threads and on 2 compilers | §2 | 1 wk (fallback at 1.5 wk max — see §4.3) |
+| **1** ✅ | BS with dividend, closed-form Greeks, implied vol, `conventions.md` | Canonical vector to 1e-9, parity to 1e-14, implied-vol round trip over the whole grid, edge cases without NaN | §3 | done |
+| **2** ✅ | Philox, inverse normal, `Estimate`, Welford, ordered reduction, experiment harness | Statistical RNG tests; bit-identical result with 1/2/8 threads and on 2 compilers | §2 | done (no fallback needed: Philox + AS241 bit-identical on GCC and Clang) |
 | **3** | CRR, averaging, Leisen-Reimer, BBS + Richardson, American, Greeks from nodes | Slopes −1 (CRR) and −2 (LR); oscillation visible over consecutive n; American invariants | §4 | 1 wk |
 | **4** | Generic `PathModel` MC engine, antithetic, controls, randomized QMC, Asian | \|MC − BS\| < 4·SE; slope −0.5; CI coverage ≈ 95 %; efficiency table | §5 | 1.5 wk |
 | **5** | Greeks: naive FD, FD+CRN, pathwise, LR, mixed, `Dual` cross-check | Full payoff × estimator matrix; FD+CRN stable on the call, unstable on the digital; pathwise digital = 0 demonstrated | §6 | 1.5 wk |
