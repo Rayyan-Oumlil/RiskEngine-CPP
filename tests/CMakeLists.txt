@@ -18,6 +18,7 @@ add_executable(riskengine_tests
     test_brownian_bridge.cpp
     test_dual.cpp
     test_mc_greeks.cpp
+    test_var.cpp
 )
 target_link_libraries(riskengine_tests PRIVATE riskengine Catch2::Catch2WithMain)
 
