@@ -427,6 +427,80 @@ def tree_convergence_envelope(path, meta, out):
     plt.close(fig)
 
 
+# Models, in one fixed categorical order for every model-risk figure.
+MODELS = [("black_scholes", "Black-Scholes"), ("heston", "Heston"), ("merton", "Merton")]
+MODEL_COLORS = dict(zip([m for m, _ in MODELS], SERIES + ["#1baf7a"]))
+
+
+def model_risk_smile(path, meta, out):
+    rows = read_rows(path)
+    fig, ax = plt.subplots(figsize=(7.4, 3.8))
+    for model, label in MODELS:
+        pts = [(float(r["strike"]), 100 * float(r["implied_vol"])) for r in rows if r["model"] == model]
+        k, v = zip(*pts)
+        ax.plot(k, v, color=MODEL_COLORS[model], linewidth=2, marker="o", markersize=3.5, label=label)
+    ax.plot([100], [20], marker="o", markersize=9, markerfacecolor="none", markeredgecolor=INK, linestyle="none")
+    ax.annotate("common calibration point", (100, 20), xytext=(8, 14), textcoords="offset points", fontsize=8,
+                color=INK_SECONDARY)
+    ax.set_xlabel("strike (spot 100, one year)")
+    ax.set_ylabel("implied volatility (%)")
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    fig.savefig(out, metadata={"Date": None})
+    plt.close(fig)
+
+
+def hedging_model_risk(path, meta, out):
+    rows = read_rows(path)
+    fig, ax = plt.subplots(figsize=(7.4, 3.8))
+    for model, label in MODELS:
+        pts = [(float(r["rebalances_per_year"]), float(r["sd_pnl"])) for r in rows if r["world"] == model]
+        n, sd = zip(*pts)
+        ax.loglog(n, sd, color=MODEL_COLORS[model], linewidth=2, marker="o", markersize=4, label=f"{label} world")
+    ax.set_xlabel("rebalances per year")
+    ax.set_ylabel("sd of hedging P&L per option")
+    ax.set_xticks([16, 63, 252, 1008], ["16", "63", "252", "1008"])
+    ax.set_yticks([0.2, 0.5, 1, 2, 4], ["0.2", "0.5", "1", "2", "4"])
+    ax.minorticks_off()
+    ax.legend(loc="lower left")
+    ax.set_title("Premium received: 10.45", loc="right", fontsize=8, color=MUTED)
+    fig.tight_layout()
+    fig.savefig(out, metadata={"Date": None})
+    plt.close(fig)
+
+
+def heston_discretization(path, meta, out):
+    rows = read_rows(path)
+    panels = [("feller_t1_k100", "Feller holds; T = 1, K = 100"),
+              ("andersen_t10_k100", "Feller fails; T = 10, K = 100"),
+              ("andersen_t10_k140", "Feller fails; T = 10, K = 140")]
+    schemes = [("qe", "QE (Andersen)"), ("euler", "full-truncation Euler")]
+    fig, axes = plt.subplots(1, 3, figsize=(7.4, 3.6), sharey=False)
+    for ax, (case, title) in zip(axes, panels):
+        cell = [r for r in rows if r["case"] == case]
+        for (scheme, label), color in zip(schemes, SERIES):
+            pts = [(float(r["dt"]), abs(float(r["bias"])), float(r["std_error"])) for r in cell if r["scheme"] == scheme]
+            dt, bias, se = zip(*pts)
+            ax.loglog(dt, bias, color=color, linewidth=2, label=label)
+            # Filled: bias significant (beyond 2 standard errors); hollow: indistinguishable from noise.
+            for x, b, e in pts:
+                ax.plot([x], [b], marker="o", markersize=4.5, color=color,
+                        markerfacecolor=color if b > 2 * e else SURFACE, linestyle="none")
+        se = [float(r["std_error"]) for r in cell if r["scheme"] == "qe"]
+        dts = [float(r["dt"]) for r in cell if r["scheme"] == "qe"]
+        ax.fill_between(dts, [1e-6] * len(se), [2 * x for x in se], color=GRID, linewidth=0, label="2 standard errors")
+        ax.set_title(title, loc="left", fontsize=8.5)
+        ax.set_xlabel("time step (years)")
+        ax.set_ylim(bottom=1e-4)
+        ax.invert_xaxis()
+    axes[0].set_ylabel("|bias| against the exact price")
+    fig.legend(*axes[1].get_legend_handles_labels(), loc="upper center", ncol=3, frameon=False, fontsize=8)
+    fig.suptitle("Hollow markers: bias within 2 standard errors (not significant)", y=0.03, fontsize=8, color=MUTED)
+    fig.tight_layout(rect=(0, 0.04, 1, 0.92))
+    fig.savefig(out, metadata={"Date": None})
+    plt.close(fig)
+
+
 FIGURES = {
     "fd_vcurve": lambda path, meta, out: fd_vcurve(read_csv(path), meta, out),
     "iv_roundtrip": iv_roundtrip,
@@ -440,6 +514,9 @@ FIGURES = {
     "stress_scenarios": stress_scenarios,
     "tree_convergence": tree_convergence,
     "tree_convergence_envelope": tree_convergence_envelope,
+    "model_risk_smile": model_risk_smile,
+    "hedging_model_risk": hedging_model_risk,
+    "heston_discretization": heston_discretization,
 }
 
 
