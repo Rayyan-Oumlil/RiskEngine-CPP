@@ -17,7 +17,7 @@ target_include_directories(riskengine_harness INTERFACE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}/generated)
 # Generator expressions, so multi-config generators (MSVC) record the configuration actually built.
-# Target options (warnings, -ffp-contract=off) come from CMakeLists.txt at the recorded commit.
+# The riskengine target's own options (-ffp-contract=off, sanitizers) are recorded too.
 set(config_flags "")
 foreach(config IN ITEMS Debug Release RelWithDebInfo MinSizeRel)
   string(TOUPPER ${config} config_upper)
@@ -26,7 +26,7 @@ endforeach()
 target_compile_definitions(riskengine_harness INTERFACE
   "RISKENGINE_COMPILER=\"${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}\""
   "RISKENGINE_BUILD_TYPE=\"$<CONFIG>\""
-  "RISKENGINE_CXX_FLAGS=\"${CMAKE_CXX_FLAGS} ${config_flags}\"")
+  "RISKENGINE_CXX_FLAGS=\"${CMAKE_CXX_FLAGS} ${config_flags} $<JOIN:$<TARGET_PROPERTY:riskengine,INTERFACE_COMPILE_OPTIONS>, >\"")
 target_link_libraries(riskengine_harness INTERFACE riskengine)
 
 set(RISKENGINE_EXPERIMENTS
