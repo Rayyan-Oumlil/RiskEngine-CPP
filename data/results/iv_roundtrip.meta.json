@@ -1,0 +1,17 @@
+{
+  "experiment": "iv_roundtrip",
+  "git_commit": "6d6e4b128c20becf355b69784ed02afe6aee144f",
+  "git_dirty": false,
+  "compiler": "GNU 13.3.0",
+  "build_type": "Release",
+  "cxx_flags": "-O3 -DNDEBUG",
+  "created_utc": "2026-09-24T01:17:00Z",
+  "parameters": {
+    "spot": 100,
+    "rate": 0.029999999999999999,
+    "dividend_yield": 0.01,
+    "strikes": "50 60 75 90 100 110 125 150 200",
+    "maturities_years": "1/365 7/365 30/365 0.25 1 2 5",
+    "vols": "0.05 0.1 0.2 0.5 1.0"
+  }
+}
