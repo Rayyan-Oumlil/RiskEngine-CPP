@@ -22,6 +22,7 @@ add_executable(riskengine_tests
     test_time_series.cpp
     test_portfolio_risk.cpp
     test_backtest.cpp
+    test_trees.cpp
 )
 target_link_libraries(riskengine_tests PRIVATE riskengine Catch2::Catch2WithMain)
 target_compile_definitions(riskengine_tests PRIVATE RISKENGINE_DATA_DIR="${PROJECT_SOURCE_DIR}/data/raw")
