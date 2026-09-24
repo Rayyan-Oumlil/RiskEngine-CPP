@@ -27,7 +27,11 @@ Full methodology, formulas, and verified reference numbers: [`docs/riskengine_re
 
 ## Status
 
-Early scaffold (Phase 0). See [`docs/riskengine_research.md`](docs/riskengine_research.md) §12 for the phased build plan, validation gates, and critical path.
+Phase 1 (analytic ground truth) in progress. See [`docs/riskengine_research.md`](docs/riskengine_research.md) §12 for the phased build plan, validation gates, and critical path.
+
+- **Done:** Black-Scholes-Merton with continuous dividend yield, closed-form Greeks, bracketed implied-vol solver, explicit T → 0 / σ → 0 branches, [`docs/conventions.md`](docs/conventions.md).
+- **Validated:** reference values to 1e-9 (relative, against 50-digit mpmath via [`tools/bs_reference.py`](tools/bs_reference.py)); put-call parity to 1e-14; bounds, monotonicity and strike convexity; implied-vol round trip on moneyness 0.5–2 × 1 day–5 years × 5 %–100 % vol.
+- **Remaining for Phase 1:** the report section §3 (needs the Phase 2 experiment harness for the finite-difference V-curve figure).
 
 ## Building
 
