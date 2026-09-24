@@ -30,6 +30,12 @@ struct BlockPlan {
         const std::uint64_t base = samples / blocks, extra = samples % blocks;
         return base + (b < extra ? 1 : 0);
     }
+
+    // Index of the first sample of block b: blocks cover 0..samples-1 in order.
+    std::uint64_t block_start(std::uint32_t b) const {
+        const std::uint64_t base = samples / blocks, extra = samples % blocks;
+        return b * base + std::min<std::uint64_t>(b, extra);
+    }
 };
 
 // Runs block_fn(block, n) -> Acc for every block and merges the results in block order. Acc is any
