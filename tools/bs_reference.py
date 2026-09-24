@@ -60,4 +60,5 @@ for name in ("canonical", "dividend"):
     for kind in ("call", "put"):
         p = digital(kind, S, K, r, q, sigma, T)
         d = diff(lambda x: digital(kind, x, K, r, q, sigma, T), S)
-        print(f"//   {name} {kind}: price={mp.nstr(p, 17)}, delta={mp.nstr(d, 17)}")
+        g = diff(lambda x: digital(kind, x, K, r, q, sigma, T), S, 2)
+        print(f"//   {name} {kind}: price={mp.nstr(p, 17)}, delta={mp.nstr(d, 17)}, gamma={mp.nstr(g, 17)}")
