@@ -1,0 +1,18 @@
+{
+  "experiment": "greeks_vs_h",
+  "git_commit": "3bad092b3a7601c6d73d41b0cea664a80958d324",
+  "git_dirty": false,
+  "compiler": "GNU 13.3.0",
+  "build_type": "Release",
+  "cxx_flags": "-O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off -fno-builtin-exp -fno-builtin-log -fno-builtin-erfc -fno-builtin-pow",
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "hardware_threads": 4,
+  "created_utc": "2026-09-24T02:41:43Z",
+  "parameters": {
+    "market": "S = K = 100, r = 0.05, q = 0, sigma = 0.2, T = 1",
+    "paths": 65536,
+    "replications": 32,
+    "seeds": "SeedKey{2026, r}, r = 0..31, the same for every row",
+    "h_grid": "10^(k/4), k = -16..-2"
+  }
+}
