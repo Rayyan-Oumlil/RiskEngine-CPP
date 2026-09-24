@@ -812,7 +812,108 @@ factor of the book, and read the factor split to see which Greek the loss comes 
 
 ## 9. Engineering and performance notes
 
-*To be written in Phase 8.*
+This section is deliberately short. It covers what each method costs at the sizes this report
+uses, how the Monte Carlo engine scales, and two performance pathologies found along the way.
+
+All timings come from `bench/benchmarks.cpp` (Google Benchmark, 5 repetitions, medians), run on a
+Release build of a clean tree on a **4-vCPU KVM guest** (Intel Xeon at 2.1 GHz, GCC 13.3). The
+machine is recorded in [`data/results/bench.json`](../data/results/bench.json) together with the
+git commit and compiler flags. The run-to-run coefficient of variation is below 9 % for every
+benchmark except the contended atomics of §9.3, where contention itself makes the timing vary.
+These are measurements of one virtual machine, not of the code in general: the ratios carry over
+to other machines better than the absolute numbers.
+
+### 9.1 What each method costs
+
+| Operation | Median time | Plan target (v1) |
+|---|---|---|
+| Black-Scholes price / price + 5 Greeks | 33.6 ns / 36.2 ns | < 100 ns ✓ |
+| Implied vol, ATM / 25 % OTM (Brent on log price, 7–8 iterations) | 566 ns / 650 ns | — |
+| One Philox normal (4×32-10 + AS241 inversion) | 14.4 ns | — |
+| CRR tree, n = 1,000: European / American | 0.15 ms / 0.52 ms | < 5 ms ✓ |
+| CRR tree, n = 10,000: European / American | 13.7 ms / 50.7 ms | — |
+| Leisen-Reimer, n = 1,001 (European) | 0.15 ms | — |
+| BBS-Richardson, n = 1,000 (American) | 0.88 ms | — |
+| Monte Carlo, 2²⁰ paths, 1 thread: plain / antithetic / RQMC | 38.6 / 26.1 / 27.8 ms | < 20 ms ✗ |
+
+- **The tree scales as n²**, as expected: from n = 1,000 to 10,000 the European tree costs 90 times
+  more.
+- **Accuracy per microsecond.** For a European option, Leisen-Reimer at n = 1,001 costs the same
+  as CRR at n = 1,000 and is about 6,000 times more accurate (§4.2).
+- **Monte Carlo misses the plan's target** of 20 ms per million single-threaded paths by a
+  factor of two. One path costs 36.8 ns, of which the normal draw is 14.4 ns (39 %). The rest is
+  the exponential of the GBM step, the payoff, the Welford update and the generic path loop of
+  the engine (one step, one factor, written for any `PathModel`).
+- **Antithetic variates** draw one normal for two paths, and it shows: 26.1 ms for the same 2²⁰
+  payoff evaluations.
+- **What would close the gap:** a batched and vectorized normal generator and `exp`
+  (§10, [`riskengine_research.md`](riskengine_research.md) §8). It was not pursued: nothing in this
+  report is limited by Monte Carlo speed.
+
+### 9.2 Thread scaling of the Monte Carlo engine
+
+| Threads | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|
+| Time, 2²⁰ paths | 38.6 ms | 18.7 ms | 13.8 ms | 10.3 ms |
+| Speedup | 1 | 2.06 | 2.80 | 3.73 |
+| Parallel efficiency | — | 103 % | 93 % | 93 % |
+
+The work is cut into 64 fixed blocks, handed out to threads through an atomic counter. Each block
+accumulates into its own local Welford, written once, and the partial results are merged in block
+order (§2.2). So the result is bit-identical for every thread count (`tests/test_simulation.cpp`)
+and scaling is close to linear on this machine. The 2-thread point slightly exceeds linear, which
+is within the run-to-run spread. The plan's target of 70 % efficiency at 8 threads cannot be tested
+on 4 vCPUs.
+
+### 9.3 Two pathologies, measured
+
+**Subnormal numbers in the tree.** The first benchmark run showed the European CRR tree at
+n = 10,000 taking 131 ms, **9 times** what its n² scaling from n = 1,000 predicts. The cause:
+- far out of the money, node values decay geometrically as the induction runs backwards;
+- thousands of them pass through the subnormal range, where x86 floating-point arithmetic falls
+  to a slow microcoded path.
+
+In a standalone test, setting the processor's flush-to-zero mode took the same tree from
+124 ms to 13.7 ms, with the same price. The engine now flushes values below the smallest normal double to zero in the induction
+(`methods/tree/binomial.hpp`), which is portable. Such a value cannot move a price above 10⁻³⁰⁰, so
+every tree result of §4 is **bit-identical** before and after the change. The American tree
+gained a factor of 2 (101 ms to 51 ms at n = 10,000), since its out-of-the-money nodes decay the
+same way.
+
+**False sharing.** Each thread counts to 2²² in its own slot; only the layout of the slots
+changes. The threads write disjoint data, yet adjacent atomic counters are 20 times slower than padded ones.
+
+| Layout, 4 threads | Time | vs 1 thread |
+|---|---|---|
+| Atomic counters, adjacent (one shared cache line) | 457 ms | 22× slower |
+| Atomic counters, padded to 64 bytes | 22.3 ms | flat |
+| Plain `volatile` stores, adjacent | 11.7 ms | 1.3× slower |
+| Local accumulator written once (the engine's pattern) | 10.0 ms | flat |
+
+- **Why atomics suffer.** Each increment of an atomic counter must own the cache line, so the
+  line bounces between cores: 195 ms against 20.6 ms at 2 threads (9.5×, close to the 9.7× of the
+  plan's v1 measurement), and 457 ms against 22.3 ms at 4.
+- **Why plain stores barely show it.** Each thread reads its own last store back from its store
+  buffer and hardly waits for the line. A naive benchmark with plain stores would conclude,
+  wrongly, that false sharing does not exist on this machine. The first version of this study did
+  exactly that (§9.4).
+- **The engine is immune by construction:** accumulators are block-local and written once.
+
+### 9.4 Benchmark hygiene
+
+Two of the first benchmark results were wrong, and neither was flagged by the tool:
+
+- **A hoisted solve.** Implied vol took 9 ns, less than one Black-Scholes price. At the money,
+  with the quote at 20 % vol (the solver's first bracket point), the solve ended at once.
+- **Wrong code from the benchmark library.** With quotes at other vols, `DoNotOptimize` on the
+  `double` quote (Google Benchmark 1.9.1's `"+m,r"` constraint) made GCC 13 generate code that
+  read 100.0 instead of the quote. Every solve then returned an error status, in 9 ns.
+
+The benchmark now reads its quotes through a `volatile` array and fails if any solve does not
+succeed. The same care produced the atomic variant of §9.3.
+
+**Rule.** Check what a benchmark computes, not only how fast: a time shorter than the work it
+claims to do, or than a cheaper operation it contains, is a bug until proven otherwise.
 
 ## 10. Limitations and future work
 
