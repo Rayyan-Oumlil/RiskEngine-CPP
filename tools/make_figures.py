@@ -310,6 +310,60 @@ def var_straddle(path, meta, out):
     plt.close(fig)
 
 
+def var_backtest(path, meta, out):
+    import datetime
+
+    rows = read_rows(path)
+    windows = [("2007-06-01", "2009-06-30", "2008 financial crisis"), ("2019-10-01", "2020-12-31", "2020 pandemic")]
+    fig, axes = plt.subplots(2, 1, figsize=(7.4, 6.0))
+    for ax, (lo, hi, title) in zip(axes, windows):
+        sel = [r for r in rows if lo <= r["date"] <= hi]
+        dates = [datetime.date.fromisoformat(r["date"]) for r in sel]
+        loss = [float(r["realized_loss"]) for r in sel]
+        ax.plot(dates, loss, color=MUTED, linewidth=0.8, label="realized one-day loss")
+        for key, label, color in (("var_mc_full_revaluation", "VaR 99 %, MC full revaluation (spot)", SERIES[0]),
+                                  ("var_historical_full_revaluation", "VaR 99 %, historical (spot + vol)", SERIES[1])):
+            var = [float(r[key]) for r in sel]
+            ax.plot(dates, var, color=color, linewidth=2, label=label)
+            hits = [(d, l) for d, l, v in zip(dates, loss, var) if l > v]
+            if key.startswith("var_historical"):
+                ax.scatter([d for d, _ in hits], [l for _, l in hits], s=22, color=color, edgecolors=SURFACE,
+                           linewidths=0.8, zorder=3, label="exception of the historical VaR")
+        ax.set_title(title, loc="left", fontsize=10)
+        ax.set_ylabel("loss per straddle")
+    axes[0].legend(loc="upper left", frameon=True, facecolor=SURFACE, edgecolor="none", framealpha=1.0, fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out, metadata={"Date": None})
+    plt.close(fig)
+
+
+def stress_scenarios(path, meta, out):
+    rows = read_rows(path)
+    names = {"black_monday_1987": "Black Monday, 19 Oct 1987", "tarp_vote_2008": "TARP vote, 29 Sep 2008",
+             "october_2008_week": "Week to 10 Oct 2008", "volmageddon_2018": "Volmageddon, 5 Feb 2018",
+             "covid_2020_day": "16 Mar 2020", "covid_2020_week": "Week to 16 Mar 2020"}
+    fig, ax = plt.subplots(figsize=(7.4, 4.2))
+    y = list(range(len(rows)))[::-1]
+    height = 0.26
+    for offset, (key, label, color) in zip((height, 0.0, -height),
+                                           (("loss", "joint spot, vol and rate move", SERIES[0]),
+                                            ("loss_spot_only", "spot move only", SERIES[1]),
+                                            ("loss_vol_only", "vol and rate move only", "#1baf7a"))):
+        ax.barh([yy + offset for yy in y], [float(r[key]) for r in rows], height=height * 0.9, color=color,
+                edgecolor=SURFACE, linewidth=1, label=label)
+    for r, yy in zip(rows, y):
+        ax.annotate(f"{float(r['loss']):.1f}", (float(r["loss"]), yy + height), xytext=(3, 0),
+                    textcoords="offset points", va="center", color=INK_SECONDARY, fontsize=8)
+    ax.set_yticks(y)
+    ax.set_yticklabels([names[r["scenario"]] for r in rows])
+    ax.set_xlabel("loss per straddle (premium received: about 4.6)")
+    ax.set_title("Historical crises replayed on today's hedged short straddle", loc="left")
+    ax.legend(loc="center right", frameon=True, facecolor=SURFACE, edgecolor="none", framealpha=1.0, fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out, metadata={"Date": None})
+    plt.close(fig)
+
+
 # Each renderer takes (csv path, metadata dict, output path). Experiments without an entry (tables)
 # are reported directly from their CSV.
 FIGURES = {
@@ -321,6 +375,8 @@ FIGURES = {
     "greeks_vs_h": greeks_vs_h,
     "greeks_vs_n": greeks_vs_n,
     "var_straddle": var_straddle,
+    "var_backtest": var_backtest,
+    "stress_scenarios": stress_scenarios,
 }
 
 
