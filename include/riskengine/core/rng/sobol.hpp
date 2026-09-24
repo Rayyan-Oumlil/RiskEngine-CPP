@@ -44,7 +44,7 @@ public:
         assert(index < (std::uint64_t{1} << kBits) && dim < dimensions_);
         const auto gray = static_cast<std::uint32_t>(index ^ (index >> 1));
         std::uint32_t x = 0;
-        for (int k = 0; gray >> k; ++k)
+        for (int k = 0; k < kBits; ++k)
             if ((gray >> k) & 1u) x ^= v_[std::size_t{dim} * kBits + k];
         return x;
     }
@@ -67,7 +67,10 @@ public:
     const std::vector<std::uint32_t>& point() const { return x_; }
     std::uint64_t index() const { return index_; }
 
+    // Moves to the next point. The last point of the sequence is 2^32 - 1: advancing past it
+    // would need direction number 32, which does not exist.
     void advance() {
+        assert(index_ + 1 < (std::uint64_t{1} << Sobol::kBits));
         const int k = std::countr_zero(index_ + 1); // gray(i + 1) = gray(i) ^ (1 << k)
         for (std::uint32_t j = 0; j < x_.size(); ++j) x_[j] ^= sobol_->direction(j, k);
         ++index_;

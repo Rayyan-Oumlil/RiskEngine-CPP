@@ -145,3 +145,14 @@ TEST_CASE("A scrambled point is uniform over seeds, and seeds differ", "[owen]")
     CHECK(to_open_unit(0u) > 0.0);
     CHECK(to_open_unit(0xffffffffu) < 1.0);
 }
+
+TEST_CASE("The last 32-bit Sobol index is reachable by random access and by the cursor", "[sobol]") {
+    // Index 2^32 - 1 has gray code bit 31 set: every direction number is used, none beyond.
+    const Sobol sobol(16);
+    constexpr std::uint64_t last = (std::uint64_t{1} << 32) - 1;
+    SobolCursor cursor(sobol, last - 1);
+    cursor.advance();
+    for (std::uint32_t j = 0; j < 16; ++j) CHECK(cursor.point()[j] == sobol.point(last, j));
+    // van der Corput: gray(2^32 - 1) = 2^31 uses only direction number 31, which is 1 (= 2^-32).
+    CHECK(sobol.point(last, 0) == 1u);
+}
