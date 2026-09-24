@@ -441,6 +441,57 @@ A bumped tree moves the strike between nodes, so its finite difference picks up 
 §4.1 (the tree version of the pathology in §3.2). Prefer BBS over CRR for its parity-independent
 Greeks.
 
+### 4.4 American exercise by simulation: Longstaff-Schwartz
+
+A tree prices American exercise by backward induction on a lattice; Longstaff and Schwartz (2001)
+price it by simulation instead, which matters once the payoff needs more state than a tree can hold
+cheaply (a path-dependent feature, several correlated factors). The method
+(`methods/montecarlo/longstaff_schwartz.hpp`) simulates N paths, then works backward from maturity:
+at each exercise date, it regresses the discounted cash flow each path actually received afterward
+on its own spot at that date, restricted to paths currently in the money, and exercises wherever the
+fitted continuation value is below the immediate payoff. The basis is {1, S, S²}, the standard
+choice in practice (the original paper suggests Laguerre polynomials; the two agree closely near the
+money).
+
+Unlike the tree, this needs every path's full trajectory at once — the regression at date k looks
+across all N paths simultaneously — so it is O(N × steps) in memory, not O(steps), and lives in its
+own class rather than as a mode of the streaming Monte Carlo engine of §5.
+
+**Two sources of error, not one.** A fitted continuation value is only ever an approximation, so
+the exercise decision it drives is never better than optimal: this pushes the price down, a bias
+that does not shrink with more paths, only with a richer basis. Fitting and pricing the same paths
+would compound this with the regression's own look-ahead (it would "know" a path's future when
+deciding whether that path's past self should have exercised), so the paths are split in half:
+one half fits the exercise boundary, the other, statistically independent, prices along it. The
+gap between the in-sample and out-of-sample price is reported as `Estimate::discretization`, kept
+separate from `std_error` so the two do not get confused.
+
+![Standard error and bias estimate of Longstaff-Schwartz against paths, canonical American put](figures/lsm_convergence.svg)
+
+*Figure 5 — Longstaff-Schwartz on the canonical American put (K = 100, 50 exercise dates), N from
+2¹² to 2¹⁸, against the tree reference of §4 (CRR, n = 20,000, 6.090333). **What it shows:** the
+standard error falls as N^(−1/2), the same rate as the European engine of §5, and the actual error
+stays inside a few standard errors of the tree at every N. The regression bias estimate does not
+trend down with N: it is set by the fixed {1, S, S²} basis, not by how many paths fit it.
+**Why it matters:** doubling the path count buys the usual √2 in statistical precision, but not a
+smaller systematic bias — that needs a richer basis or more exercise dates, a different knob.*
+Source: [`data/results/lsm_convergence.csv`](../data/results/lsm_convergence.csv).
+
+At 2¹⁸ paths, the price is 6.0764 ± 0.0199 against the tree's 6.0904 (the coarser CRR reference of
+§4, 6.090333), 0.70 standard errors away and 0.23 % low, consistent with the method's known downward
+bias. Two invariants hold across every configuration
+tested (`tests/test_longstaff_schwartz.cpp`): the American price never falls below the European one
+priced by the closed form of §3, and without dividends an American call matches the European call
+within its standard error (Merton's theorem — LSM cannot enforce this exactly the way the tree's
+induction does, since it is a statistical estimate, but it must not systematically find spurious
+early-exercise value).
+
+**Remedy.** For a vanilla American option in one factor, the tree of §4 is faster and has no
+regression bias — use it. Longstaff-Schwartz earns its cost once the tree stops being cheap: more
+than one or two state variables (Heston's variance, a path-dependent average), or a payoff a lattice
+cannot represent compactly. Report the discretization bias alongside the standard error; a price
+without either invites the same mistake §6 makes about Monte Carlo Greeks.
+
 ## 5. Monte Carlo: convergence and variance reduction
 
 The engine (`methods/montecarlo/engine.hpp`) simulates any `PathModel` (GBM so far, with an exact
@@ -454,7 +505,7 @@ with 1 and 12 time steps, and for the straddle and the geometric Asian with 12 s
 
 ![Standard error and actual error of the Monte Carlo price against the number of paths](figures/mc_convergence.svg)
 
-*Figure 5 — Monte Carlo price of the canonical ATM call with N = 2¹⁰ to 2²² paths (an independent
+*Figure 6 — Monte Carlo price of the canonical ATM call with N = 2¹⁰ to 2²² paths (an independent
 seed for each N): standard error and actual error against Black-Scholes. **What it shows:** the
 standard error falls as N^{−1/2} (fitted slope −0.5004), and the actual error scatters below and
 around it, within 1.55 standard errors at every N. **Why it matters:** the rate is the textbook one,
@@ -467,7 +518,7 @@ digital (K = 130) were compared with their exact prices.
 
 ![Histograms of the z-scores of 1,000 independent Monte Carlo prices against the standard normal density](figures/mc_coverage.svg)
 
-*Figure 6 — z-scores (estimate − exact) / SE of 1,000 independent pricings, against the N(0, 1)
+*Figure 7 — z-scores (estimate − exact) / SE of 1,000 independent pricings, against the N(0, 1)
 density. **What it shows:** 94.5 % (call) and 95.7 % (digital) of the 95 % confidence intervals
 contain the exact price, against 95 % ± 0.69 % expected; the z-scores have standard deviation 1.04
 and 1.00. **Why it matters:** the error bars reported with every Monte Carlo number in this report
@@ -542,7 +593,7 @@ coordinates on the terminal value and then the coarse shape of the path.
 
 ![Spread of one estimate against the number of points, pseudo-random against randomized QMC, for four payoffs](figures/qmc_convergence.svg)
 
-*Figure 7 — Standard deviation of a single N-point estimate (over 64 independent seeds or
+*Figure 8 — Standard deviation of a single N-point estimate (over 64 independent seeds or
 scramblings) against N, for four problems of increasing difficulty; each line is labeled with its
 fitted slope. **What it shows:** pseudo-random Monte Carlo converges at N^{−1/2} everywhere;
 randomized QMC reaches N^{−1} on the one-dimensional problems, including the digital, drops to
@@ -599,7 +650,7 @@ replications and relative to the exact Greek.
 
 ![Relative RMSE of finite-difference Greeks against the bump, with and without common random numbers](figures/greeks_vs_h.svg)
 
-*Figure 8 — Relative RMSE of one estimate (N = 2¹⁶ paths) against the relative bump h, for finite
+*Figure 9 — Relative RMSE of one estimate (N = 2¹⁶ paths) against the relative bump h, for finite
 differences with independent seeds and with common random numbers; the unbiased estimators are
 drawn as h-independent levels. **What it shows:** with independent seeds the error explodes as the
 bump shrinks, as h⁻¹ for delta and h⁻² for gamma; common random numbers remove the explosion for
@@ -611,7 +662,7 @@ difference divides it by 2hS: the variance of the delta estimator is O(1/(N h²)
 estimator O(1/(N h⁴)). At h = 10⁻⁴, a bump that is harmless on the analytic pricer of §3.2, the
 Monte Carlo delta is **6.4 times** its true value in error and the gamma **80,000 times**. Balancing
 the h² bias against this variance gives h* ∝ N^{−1/6} and an RMSE falling only as N^{−1/3}
-(measured −0.36, Figure 9). Even at its best bump (h ≈ 6 %), the independent-seed delta is 1.3 %
+(measured −0.36, Figure 10). Even at its best bump (h ≈ 6 %), the independent-seed delta is 1.3 %
 wrong at N = 2¹⁶, nearly four times the error of the pathwise estimator on the same paths.
 
 **Remedy.** Never difference two independently simulated prices. At the very least use common
@@ -622,7 +673,7 @@ random numbers, and prefer an unbiased estimator (§6.3).
 With the same normal for every bump, a Lipschitz payoff (the call) gives per-path differences that
 stay bounded as h → 0: the variance is O(1/N) whatever h, and the call delta is flat at 0.35 % for
 every h ≤ 1 %. As h → 0, the CRN difference of each path *becomes* the pathwise derivative: the
-two estimators are indistinguishable in Figures 8 and 9.
+two estimators are indistinguishable in Figures 9 and 10.
 
 **Where CRN fail.** A second difference of a kinked payoff (the call gamma), or a first difference
 of a jump (the digital delta), is non-zero only on the paths that end within about hS of the strike,
@@ -650,7 +701,7 @@ N = 2¹⁰ to 2¹⁸).
 
 ![Relative RMSE of every Greek estimator against the number of paths](figures/greeks_vs_n.svg)
 
-*Figure 9 — Relative RMSE of one estimate against N, with the best bump at each N for finite
+*Figure 10 — Relative RMSE of one estimate against N, with the best bump at each N for finite
 differences; each line is labeled with its fitted slope. **What it shows:** the unbiased estimators
 converge at N^{−1/2}, finite differences more slowly, and two estimators do not converge at all on
 the digital: the pathwise delta and the mixed gamma sit at exactly 100 % error for every N.
@@ -715,7 +766,7 @@ a 95 % percentile-bootstrap interval (200 resamples).
 
 ![VaR and ES of the hedged short straddle by method, with bootstrap intervals](figures/var_straddle.svg)
 
-*Figure 10 — One-day 99 % VaR and 97.5 % ES of the hedged short straddle, by method and set of risk
+*Figure 11 — One-day 99 % VaR and 97.5 % ES of the hedged short straddle, by method and set of risk
 factors, with 95 % bootstrap intervals for the empirical methods. **What it shows:** the linear
 method reports no risk at all, the quadratic one 59 % of the spot-only full revaluation, and adding
 the volatility factor or real (fat-tailed) history doubles the full-revaluation figure again. **Why
@@ -827,7 +878,7 @@ Crisis windows: 1 September 2008 to 31 March 2009 and 15 February to 30 April 20
 
 ![Realized loss against the Monte Carlo and historical VaR in 2008 and 2020](figures/var_backtest.svg)
 
-*Figure 11 — Realized one-day loss of the fresh hedged short straddle against its Monte Carlo
+*Figure 12 — Realized one-day loss of the fresh hedged short straddle against its Monte Carlo
 (spot) and historical (spot + vol) 99 % VaR, through the 2008 crisis and the 2020 pandemic; dots
 mark the exceptions of the historical VaR. **What it shows:** the Monte Carlo VaR reacts at once to
 the implied vol but misses the vol spikes; the historical VaR is high on average but rises only
@@ -846,7 +897,7 @@ passing a coverage test on average does not protect against the days that matter
   Christoffersen rejects independence strongly (p = 3 × 10⁻⁵). The exceptions cluster: 14 in the
   seven months of the 2008 crisis and 7 in ten weeks of 2020, when a well-calibrated 99 % VaR would
   have given one or two. A 500-day window carries a crisis only once it has happened, and carries
-  it for two years afterwards (Figure 11, 2009 and late 2020): the average VaR is three times the
+  it for two years afterwards (Figure 12, 2009 and late 2020): the average VaR is three times the
   Monte Carlo one, at the wrong times.
 
 **Remedy.** Backtest coverage *and* independence; a model that passes Kupiec but fails
@@ -876,7 +927,7 @@ NASDAQ moves are simple returns (the CSV stores log-returns). Source:
 
 ![Stress losses of the hedged short straddle, joint and by factor](figures/stress_scenarios.svg)
 
-*Figure 12 — Loss of the hedged short straddle in six historical crises, for the joint move and for
+*Figure 13 — Loss of the hedged short straddle in six historical crises, for the joint move and for
 the spot and vol moves alone. **What it shows:** a single day can cost from one to five and a half
 times the premium received, and the factor that drives the loss changes from crisis to crisis.
 **Why it matters:** these losses are 2 to 11 times the historical 99 % VaR and 4 to 20 times the
@@ -934,7 +985,7 @@ unchanged bit for bit.
 
 ![One-year implied volatility smiles of the three models calibrated to the same at-the-money price](figures/model_risk_smile.svg)
 
-*Figure 13 — One-year implied volatility against strike for Black-Scholes, Heston and Merton,
+*Figure 14 — One-year implied volatility against strike for Black-Scholes, Heston and Merton,
 calibrated to the same at-the-money price (circled). **What it shows:**
 - all three agree on the one number they were fitted to;
 - Heston produces a steep skew, from 29 % at K = 70 to 15 % at K = 130;
@@ -985,7 +1036,7 @@ of a product with a closed form lies within 2.0 standard errors of it. Source:
 
 ![Standard deviation of the delta-hedging P&L against rebalancing frequency in three worlds](figures/hedging_model_risk.svg)
 
-*Figure 14 — Standard deviation of the P&L of a short one-year ATM call, sold at the common price
+*Figure 15 — Standard deviation of the P&L of a short one-year ATM call, sold at the common price
 and delta-hedged with the Black-Scholes delta at 20 %, against the number of rebalances a year.
 20,000 paths per world, the same paths for every frequency. **What it shows:** in the
 Black-Scholes world the hedging error halves each time the frequency quadruples. In the Heston and
@@ -1026,7 +1077,7 @@ differs is the spread.
 
 ![Absolute bias of QE and full-truncation Euler against the time step, with the statistical error band](figures/heston_discretization.svg)
 
-*Figure 15 — Absolute bias of the Monte Carlo price against the exact characteristic-function
+*Figure 16 — Absolute bias of the Monte Carlo price against the exact characteristic-function
 price, for QE and full-truncation Euler, against the time step, with 2 standard errors of 2²¹
 paths shaded. Hollow markers are not significant. **What it shows:**
 - when Feller's condition holds, both schemes are unbiased within noise from dt = 1/16;
@@ -1184,8 +1235,10 @@ claims to do, or than a cheaper operation it contains, is a bug until proven oth
 - Model risk (§8) compares Heston and Merton to GBM after calibrating all three to one
   at-the-money price. A calibration to a full market smile, local volatility (Dupire) and
   stochastic-local volatility are not covered.
-- The American option is only a put or call on a tree. Other gaps:
-  - no least-squares Monte Carlo (Longstaff-Schwartz);
+- American exercise is priced by tree (§4) and by Longstaff-Schwartz (§4.4), both single-factor
+  (GBM) and vanilla put or call only: the regression basis {1, S, S²} and the path storage were
+  not extended to a second state variable (Heston's variance) or a path-dependent payoff, which is
+  exactly the case that would justify simulation over a tree in the first place. Other gaps:
   - barriers only by daily-monitored Monte Carlo (§8.1), with no continuity correction
     (Broadie-Glasserman-Kou);
   - no QE martingale correction (Andersen 2008, §4): the small drift it would remove is inside
@@ -1226,7 +1279,8 @@ claims to do, or than a cheaper operation it contains, is a bug until proven oth
 ([`riskengine_research.md`](riskengine_research.md) §12.1):
 1. the discrete-barrier correction (BGK);
 2. Python bindings for the experiments;
-3. Longstaff-Schwartz;
+3. Longstaff-Schwartz under Heston, or on a path-dependent payoff (§4.4 covers only GBM and a
+   vanilla put or call, the case a tree already handles as well or better);
 4. adjoint AAD;
 5. local volatility (Dupire) as a further model;
 6. explicit SIMD, only if measured to matter.
@@ -1344,19 +1398,20 @@ parameters, seeds, the git commit, the compiler and flags, and the CPU. This tab
 | `fd_vcurve` | §3.2, Figure 2 | finite-difference Greeks against the bump |
 | `tree_convergence` (+ `_envelope`) | §4.1–4.2, Figures 3–4 | five tree methods, every n from 10 to 400, envelope to 10,000 |
 | `tree_greeks` | §4.3 | node Greeks against Black-Scholes and a fine tree |
-| `mc_convergence` | §5.1, Figure 5 | error and standard error, N = 2¹⁰ to 2²² |
-| `mc_coverage` | §5.1, Figure 6 | 1,000 independent pricings, interval coverage |
+| `lsm_convergence` | §4.4, Figure 5 | Longstaff-Schwartz standard error and bias against N |
+| `mc_convergence` | §5.1, Figure 6 | error and standard error, N = 2¹⁰ to 2²² |
+| `mc_coverage` | §5.1, Figure 7 | 1,000 independent pricings, interval coverage |
 | `mc_efficiency` | §5.2 | variance reduction: variance, time, efficiency |
-| `qmc_convergence` | §5.3, Figure 7 | pseudo-random against randomized QMC, 64 replications |
-| `greeks_vs_h` | §6.1, Figure 8 | finite-difference Greeks against the bump |
-| `greeks_vs_n` | §6.2–6.3, Figure 9 | every estimator against N |
+| `qmc_convergence` | §5.3, Figure 8 | pseudo-random against randomized QMC, 64 replications |
+| `greeks_vs_h` | §6.1, Figure 9 | finite-difference Greeks against the bump |
+| `greeks_vs_n` | §6.2–6.3, Figure 10 | every estimator against N |
 | `greeks_matrix` | §6.4 | payoff × regime × Greek × estimator |
-| `var_straddle` | §7.1–7.3, Figure 10 | VaR and ES by seven methods, bootstrap intervals |
-| `var_backtest` (+ `_summary`) | §7.4, Figure 11 | 8,744-day backtest, Kupiec, Christoffersen, Basel zones |
-| `stress_scenarios` | §7.5, Figure 12 | six historical crises, joint and by factor |
-| `model_risk_exotics` (+ `model_risk_smile`) | §8.1, Figure 13 | calibration to one ATM price; smiles and exotics under three models |
-| `hedging_model_risk` | §8.2, Figure 14 | Black-Scholes delta hedge in three worlds, four frequencies |
-| `heston_discretization` | §8.3, Figure 15 | QE and Euler bias against the characteristic function |
+| `var_straddle` | §7.1–7.3, Figure 11 | VaR and ES by seven methods, bootstrap intervals |
+| `var_backtest` (+ `_summary`) | §7.4, Figure 12 | 8,744-day backtest, Kupiec, Christoffersen, Basel zones |
+| `stress_scenarios` | §7.5, Figure 13 | six historical crises, joint and by factor |
+| `model_risk_exotics` (+ `model_risk_smile`) | §8.1, Figure 14 | calibration to one ATM price; smiles and exotics under three models |
+| `hedging_model_risk` | §8.2, Figure 15 | Black-Scholes delta hedge in three worlds, four frequencies |
+| `heston_discretization` | §8.3, Figure 16 | QE and Euler bias against the characteristic function |
 | `bench/benchmarks.cpp` → `bench.json` | §9 | Google Benchmark, 5 repetitions |
 
 The reference market throughout is S = K = 100, r = 5 %, q = 0, σ = 20 %, T = 1. The

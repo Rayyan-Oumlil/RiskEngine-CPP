@@ -130,6 +130,29 @@ def mc_convergence(path, meta, out):
     plt.close(fig)
 
 
+def lsm_convergence(path, meta, out):
+    data = read_csv(path)
+    n, se, err, bias = data["paths"], data["std_error"], data["abs_error"], data["bias_estimate"]
+    fig, ax = plt.subplots(figsize=(7.0, 4.2))
+    ax.loglog(n, se, color=SERIES[0], linewidth=2, marker="o", markersize=5, label="standard error")
+    ax.loglog(n, err, color=SERIES[1], linewidth=0, marker="o", markersize=6, markeredgecolor=SURFACE,
+              label="|estimate − tree reference|")
+    ax.loglog(n, [abs(b) for b in bias], color=INK_SECONDARY, linewidth=1.5, linestyle=(0, (2, 2)), marker="s",
+              markersize=4, label="|regression bias estimate|")
+    ref = [se[0] / 3 * (x / n[0]) ** -0.5 for x in (n[0], n[-1])]
+    ax.loglog([n[0], n[-1]], ref, color=MUTED, linewidth=1, linestyle=(0, (4, 3)))
+    ax.annotate(r"reference slope $-1/2$", (n[-1], ref[-1]), xytext=(0, -16), textcoords="offset points",
+                color=MUTED, ha="right")
+    ax.set_xlabel("paths N (each half fit, half priced)")
+    ax.set_ylabel("price error")
+    ax.set_title(r"Longstaff-Schwartz on the canonical American put: SE falls as $N^{-1/2}$,"
+                 "\nthe regression bias does not", loc="left", fontsize=10)
+    ax.legend(loc="upper right", frameon=True, facecolor=SURFACE, edgecolor="none", framealpha=1.0, fontsize=8.5)
+    fig.tight_layout()
+    fig.savefig(out, metadata={"Date": None})
+    plt.close(fig)
+
+
 def mc_coverage(path, meta, out):
     import math
 
@@ -505,6 +528,7 @@ FIGURES = {
     "fd_vcurve": lambda path, meta, out: fd_vcurve(read_csv(path), meta, out),
     "iv_roundtrip": iv_roundtrip,
     "mc_convergence": mc_convergence,
+    "lsm_convergence": lsm_convergence,
     "mc_coverage": mc_coverage,
     "qmc_convergence": qmc_convergence,
     "greeks_vs_h": greeks_vs_h,

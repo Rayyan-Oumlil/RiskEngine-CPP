@@ -7,6 +7,7 @@
 #include "riskengine/methods/analytic/implied_vol.hpp"
 #include "riskengine/methods/montecarlo/engine.hpp"
 #include "riskengine/methods/montecarlo/greeks.hpp"
+#include "riskengine/methods/montecarlo/longstaff_schwartz.hpp"
 #include "riskengine/methods/tree/binomial.hpp"
 #include "riskengine/models/gbm.hpp"
 #include "riskengine/models/heston.hpp"
@@ -39,6 +40,12 @@ int main() {
     std::printf("American put (BBS-R) %.6f   European put %.6f\n",
                 binomial_price(TreeMethod::BbsRichardson, put, Exercise::American, market, 2000),
                 black_scholes_price(put, market));
+
+    // Same American put, priced by least-squares Monte Carlo instead of a tree.
+    const LongstaffSchwartz<GBM> lsm(put, LongstaffSchwartzConfig{.paths = 1u << 17, .steps = 50});
+    const Estimate lsm_price = lsm.price(market, SeedKey{2026});
+    std::printf("American put (LSM)   %.6f ± %.6f  (bias estimate %+.4f)\n", lsm_price.value, lsm_price.std_error,
+                lsm_price.discretization);
 
     // Monte Carlo: every estimate carries its standard error; the result does not depend on threads.
     const MonteCarlo<GBM, VanillaPayoff> mc(VanillaPayoff{100.0, OptionType::Call}, Maturity{1.0},

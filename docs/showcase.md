@@ -107,6 +107,11 @@ What it showed:
   order.
 - **Plan checks:** the plan's reference values are reproduced (American put 6.090333 at
   n = 20,000), and an American call without dividends equals the European call bit for bit.
+- **Extension: Longstaff-Schwartz.** The same American put priced by least-squares Monte Carlo
+  instead of a lattice, split-sample so the regression's own look-ahead never leaks into the
+  reported price, lands within 0.7 standard errors of the tree. The regression's bias does not
+  shrink with more paths — only the standard error does — so the two are reported separately
+  (`model_risk_report.md` §4.4).
 
 ![Tree convergence over consecutive n](figures/tree_convergence.svg)
 
@@ -264,6 +269,7 @@ Implied vol          0.200000000000 (ok)
 CRR, n = 1000        10.448584   error -2.00e-03
 Leisen-Reimer, 1001  10.450583   error -3.54e-07
 American put (BBS-R) 6.090397   European put 5.573526
+American put (LSM)   6.004062 ± 0.027926  (bias estimate -0.0008)
 Monte Carlo (anti.)  10.439233 ± 0.010149  (-1.1 standard errors from BS)
 Pathwise delta       0.6369 ± 0.0011  (exact 0.6368)
 Heston (CF)          10.394219

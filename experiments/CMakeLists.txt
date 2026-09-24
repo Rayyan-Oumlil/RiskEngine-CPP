@@ -47,6 +47,7 @@ set(RISKENGINE_EXPERIMENTS
   heston_discretization
   model_risk_exotics
   hedging_model_risk
+  lsm_convergence
 )
 
 foreach(experiment IN LISTS RISKENGINE_EXPERIMENTS)

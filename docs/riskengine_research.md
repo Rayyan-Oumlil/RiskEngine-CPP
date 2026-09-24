@@ -466,7 +466,7 @@ In order, the first thing to sacrifice is always the most recent addition to the
 |---|---|---|
 | Discrete barrier monitoring correction (BGK) | High (links §4/§7) | Low |
 | Python bindings (nanobind) for the experiments | Medium-high | Low |
-| Longstaff-Schwartz (American by MC) | High | High |
+| ~~Longstaff-Schwartz (American by MC)~~ — done, `model_risk_report.md` §4.4 | High | High |
 | Adjoint-mode AAD | High | High |
 | Local volatility (Dupire) as a 4th assumption | Very high for the thesis | High |
 | Explicit SIMD | Medium, only if measured | High |
