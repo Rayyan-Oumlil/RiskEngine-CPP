@@ -1,74 +1,73 @@
-# RiskEngine-CPP — Rapport de risque de méthode, de mesure et de modèle
+# RiskEngine-CPP — Numerical-method, risk-measure and model risk report
 
-> **Statut :** en cours de rédaction. §2 et §3 sont rédigés (phases 1 et 2). Les autres sections
-> sont remplies au fil des phases du plan ([`riskengine_research.md`](riskengine_research.md) §12).
+> **Status:** in progress. §2 and §3 are written (Phases 1 and 2). The other sections are filled
+> in as the phases of the plan land ([`riskengine_research.md`](riskengine_research.md) §12).
 >
-> **Règles éditoriales.** Chaque figure a une légende autonome (*ce qu'elle montre*, puis *pourquoi
-> c'est important*). Chaque chiffre renvoie au CSV ou au test qui le produit. Chaque estimation
-> stochastique est donnée avec son erreur standard. Chaque affirmation négative (« X échoue ») est
-> accompagnée du mécanisme et de la parade.
+> **Editorial rules.** Every figure has a self-contained caption (*what it shows*, then *why it
+> matters*). Every number points to the CSV or test that produced it. Every stochastic estimate is
+> given with its standard error. Every negative claim ("X fails") comes with its mechanism and its
+> remedy.
 
-## Résumé exécutif
+## Executive summary
 
-*À rédiger en phase 8, une fois les découvertes chiffrées de §3 à §8 établies.*
-
----
-
-## 1. Introduction et taxonomie du risque
-
-*À rédiger en phase 8.* Cadre : [`riskengine_research.md`](riskengine_research.md) §0.
+*To be written in Phase 8, once the quantified findings of §3 to §8 are established.*
 
 ---
 
-## 2. Cadre, conventions et reproductibilité
+## 1. Introduction and risk taxonomy
 
-### 2.1 Dynamiques, paramètres de référence, conventions d'unités
+*To be written in Phase 8.* Framework: [`riskengine_research.md`](riskengine_research.md) §0.
 
-Les unités (taux continus décimaux, vol annualisée décimale, maturités en années, Grecs bruts par
-unité d'entrée) et le traitement des cas dégénérés sont fixés dans
-[`conventions.md`](conventions.md). Le vecteur de référence de ce rapport est S = K = 100,
-r = 5 %, q = 0, σ = 20 %, T = 1 an.
+---
 
-### 2.2 Protocole : générateur, graines, métrique d'efficacité, régénération
+## 2. Setup, conventions and reproducibility
 
-**Générateur.** Philox 4×32-10, un générateur à compteur : le tirage *i* du bloc *b* vaut
-Philox(clé = graine, compteur = (i, b, flux)). Il n'y a aucun état à partager ni à faire avancer.
-L'implémentation est vérifiée à la compilation contre les vecteurs de référence de Random123. Les
-uniformes sont les milieux (k + ½)·2⁻⁵² d'une grille de 2⁵² points : jamais 0 ni 1, et 1 − u est
-exact. Les normales sont obtenues par inversion (Wichura AS241, erreur relative ≤ 10⁻¹⁵ contre une
-référence à 60 chiffres), jamais par `std::normal_distribution`, dont l'algorithme dépend de la
-bibliothèque standard, ni par Box-Muller, qui détruit la structure des points quasi-aléatoires. La
-grille étant symétrique, `normal(1 − u) == −normal(u)` exactement.
+### 2.1 Dynamics, reference parameters, unit conventions
 
-**Reproductibilité bit à bit.** Une simulation est découpée en un nombre fixe de blocs, indépendant
-du nombre de threads. Chaque bloc possède son flux aléatoire et son accumulateur de Welford ; les
-résultats partiels sont fusionnés (Chan) dans l'ordre des blocs. L'addition flottante n'étant pas
-associative, c'est cet ordre fixe qui garantit un résultat identique au bit près avec 1, 2, 3, 8 ou
-64 threads. La contraction automatique en FMA est désactivée (`-ffp-contract=off`), si bien que GCC
-et Clang produisent les mêmes bits, y compris avec `-march=native`. Une estimation Monte Carlo est
-donc une fonction pure de (graine, nombre de tirages, nombre de blocs).
+Units (continuously compounded decimal rates, annualized decimal vol, maturities in years, raw
+Greeks per unit of input) and the treatment of degenerate cases are fixed in
+[`conventions.md`](conventions.md). The reference vector of this report is S = K = 100, r = 5 %,
+q = 0, σ = 20 %, T = 1 year.
 
-**Portes de validation (phase 2)**, toutes dans `tests/test_rng.cpp` et `tests/test_simulation.cpp`
-avec graines figées (tests déterministes) :
+### 2.2 Protocol: generator, seeds, efficiency metric, regeneration
 
-| Porte | Résultat |
+**Generator.** Philox 4×32-10, a counter-based generator: draw *i* of block *b* is
+Philox(key = seed, counter = (i, b, stream)). There is no state to share or advance. The
+implementation is checked at compile time against the Random123 known-answer vectors. Uniforms
+are the midpoints (k + ½)·2⁻⁵² of a 2⁵²-point grid: never 0 or 1, and 1 − u is exact. Normals
+come from inversion (Wichura AS241, relative error ≤ 10⁻¹⁵ against a 60-digit reference), never
+from `std::normal_distribution`, whose algorithm depends on the standard library, nor from
+Box-Muller, which destroys the structure of quasi-random points. Because the grid is symmetric,
+`normal(1 − u) == −normal(u)` exactly.
+
+**Bit-for-bit reproducibility.** A simulation is cut into a fixed number of blocks, independent of
+the thread count. Each block owns its random stream and its Welford accumulator; the partial
+results are merged (Chan) in block order. Floating-point addition is not associative, so it is this
+fixed order that makes the result bit-identical with 1, 2, 3, 8 or 64 threads. Automatic FMA
+contraction is disabled (`-ffp-contract=off`), so GCC and Clang produce the same bits, including
+with `-march=native`. A Monte Carlo estimate is therefore a pure function of (seed, number of
+draws, number of blocks).
+
+**Validation gates (Phase 2)**, all in `tests/test_rng.cpp` and `tests/test_simulation.cpp`, with
+fixed seeds (deterministic tests):
+
+| Gate | Result |
 |---|---|
-| Philox contre les vecteurs Random123 | 3/3, vérifié par `static_assert` |
-| Uniformes : moyenne, variance, Kolmogorov-Smirnov (10⁶ tirages) | dans 4 écarts-types ; √n·D < 1,95 (seuil 99,9 %) |
-| Normales : moyenne, variance, asymétrie, kurtosis, Kolmogorov-Smirnov (10⁶ tirages) | idem |
-| Corrélation sérielle (retard 1) et entre blocs | < 4/√n |
-| Résultat identique à 1/2/3/8/64 threads | égalité exacte |
-| Même résultat sur GCC et Clang | égalité exacte sur valeurs de référence (golden) |
-| Calibration de l'erreur standard, 200 réplications indépendantes | ≥ 90 % des \|z\| ≤ 1,96, aucun \|z\| > 4 |
+| Philox against the Random123 vectors | 3/3, checked by `static_assert` |
+| Uniforms: mean, variance, Kolmogorov-Smirnov (10⁶ draws) | within 4 standard deviations; √n·D < 1.95 (99.9 % level) |
+| Normals: mean, variance, skewness, kurtosis, Kolmogorov-Smirnov (10⁶ draws) | same |
+| Serial (lag-1) and cross-block correlation | < 4/√n |
+| Same result with 1/2/3/8/64 threads | exact equality |
+| Same result on GCC and Clang | exact equality on golden values |
+| Standard-error calibration, 200 independent replications | ≥ 90 % of \|z\| ≤ 1.96, no \|z\| > 4 |
 
-**Efficacité.** Les techniques de réduction de variance seront comparées par
-efficacité = 1 / (variance × temps CPU) (Glasserman), à partir de la phase 4.
+**Efficiency.** Variance-reduction techniques will be compared by
+efficiency = 1 / (variance × CPU time) (Glasserman), from Phase 4 on.
 
-**Régénération.** Chaque figure ou table est produite par un exécutable de `experiments/`, qui écrit
-`data/results/<id>.csv` et `<id>.meta.json` : commit git et indicateur de copie de travail modifiée,
-compilateur, configuration, drapeaux, paramètres, date. Les résultats versionnés proviennent d'un
-build Release d'un arbre propre (`"git_dirty": false`). Les figures sont produites par
-`tools/make_figures.py` :
+**Regeneration.** Every figure or table is produced by an executable in `experiments/`, which
+writes `data/results/<id>.csv` and `<id>.meta.json`: git commit and dirty-tree flag, compiler,
+configuration, flags, parameters, date. Committed results come from a Release build of a clean tree
+(`"git_dirty": false`). Figures are rendered by `tools/make_figures.py`:
 
 ```
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
@@ -79,152 +78,149 @@ python3 tools/make_figures.py        # pip install -r tools/requirements.txt
 
 ---
 
-## 3. Vérité terrain : Black-Scholes analytique
+## 3. Ground truth: analytic Black-Scholes
 
-Toutes les méthodes des sections suivantes (arbres, Monte Carlo, Grecs stochastiques) sont jugées
-contre la formule fermée. Cette section établit que la formule fermée elle-même est exacte à la
-précision affichée, et documente les deux limites numériques qu'elle impose déjà :
-l'inversion en volatilité implicite, et les différences finies.
+Every method in the following sections (trees, Monte Carlo, stochastic Greeks) is judged against
+the closed form. This section establishes that the closed form itself is exact to the precision
+shown, and documents the two numerical limits it already imposes: inversion to implied volatility,
+and finite differences.
 
-### 3.1 Validation, invariants, volatilité implicite
+### 3.1 Validation, invariants, implied volatility
 
-**Valeurs de référence.** Dix cas (vecteur canonique, dividende continu, exemple 15.6 de Hull, et
-deux strikes d'aile dont le prix hors de la monnaie vaut ~10⁻¹²) sont comparés à une référence mpmath
-à 50 chiffres ([`tools/bs_reference.py`](../tools/bs_reference.py)). Les Grecs de référence y sont
-des *dérivées numériques du prix* à haute précision, et non les formules fermées : ils vérifient donc
-indépendamment les formules, leurs signes et le traitement du dividende. Le prix et les cinq Grecs
-concordent à 10⁻⁹ en relatif dans les dix cas, y compris pour les prix de 10⁻¹² en aile
-(`tests/test_black_scholes.cpp`).
+**Reference values.** Ten cases (canonical vector, continuous dividend, Hull's example 15.6, and
+two wing strikes whose out-of-the-money price is ~10⁻¹²) are compared with a 50-digit mpmath
+reference ([`tools/bs_reference.py`](../tools/bs_reference.py)). The reference Greeks are
+*numerical derivatives of the high-precision price*, not the closed forms, so they independently
+check the formulas, their signs and the dividend handling. The price and all five Greeks agree to
+10⁻⁹ relative in all ten cases, including the 10⁻¹² wing prices (`tests/test_black_scholes.cpp`).
 
-| Vecteur canonique | Valeur |
+| Canonical vector | Value |
 |---|---|
-| Call / put | 10,450584 / 5,573526 |
-| Delta call | 0,636831 |
-| Gamma | 0,018762 |
-| Vega | 37,524 par 1,00 de vol (0,375 par point) |
-| Theta call | −6,414 par an (−0,01757 par jour calendaire) |
-| Rho call | 53,232 par 1,00 de taux |
+| Call / put | 10.450584 / 5.573526 |
+| Call delta | 0.636831 |
+| Gamma | 0.018762 |
+| Vega | 37.524 per 1.00 of vol (0.375 per point) |
+| Call theta | −6.414 per year (−0.01757 per calendar day) |
+| Call rho | 53.232 per 1.00 of rate |
 
-**Invariants**, sur une grille de 315 points (strike 50 à 200 pour S = 100, maturité 1 jour à 5 ans,
-vol 5 % à 100 %) : parité call-put à 10⁻¹⁴ près relativement à S + K ; bornes de non-arbitrage ;
-∂C/∂K < 0 et convexité en strike ; Grecs fermés conformes aux différences finies du prix. Pour
-T → 0 et σ → 0, le pricer renvoie la valeur intrinsèque actualisée du forward par une branche
-explicite, jamais par une division par zéro ; aucun NaN n'apparaît jusqu'à T = σ = 10⁻³⁰⁰.
+**Invariants**, on a 315-point grid (strike 50 to 200 for S = 100, maturity 1 day to 5 years,
+vol 5 % to 100 %): put-call parity to 10⁻¹⁴ relative to S + K; no-arbitrage bounds; ∂C/∂K < 0 and
+convexity in strike; closed-form Greeks consistent with finite differences of the price. As T → 0
+and σ → 0, the pricer returns the discounted forward intrinsic value through an explicit branch,
+never through a division by zero; no NaN appears down to T = σ = 10⁻³⁰⁰.
 
-**Volatilité implicite.** Le solveur ramène la cotation à l'option hors de la monnaie par la parité,
-puis résout log prix(σ) = log cible par la méthode de Brent sur un intervalle encadrant. Travailler
-en log prix garde le problème bien conditionné dans les ailes, où le prix couvre des centaines
-d'ordres de grandeur. Newton seul n'est pas utilisé : il diverge là où vega → 0.
+**Implied volatility.** The solver maps the quote to the out-of-the-money option by parity, then
+solves log price(σ) = log target with Brent's method on a bracket. Working in log price keeps the
+problem well conditioned in the wings, where the price spans hundreds of orders of magnitude.
+Newton alone is not used: it diverges where vega → 0.
 
-![Erreur relative de la vol implicite retrouvée en fonction de la borne de bruit de la cotation](figures/iv_roundtrip.svg)
+![Relative error of the recovered implied vol against the noise bound of the quote](figures/iv_roundtrip.svg)
 
-*Figure 1 — Aller-retour prix → vol → prix sur la grille de 315 points, pour la cotation hors de
-la monnaie (bleu) et dans la monnaie (orange) de chaque point. En abscisse, la borne de bruit
-ε·(1 + (1 + d²)(a + b)/(σ·vega)), où a − b est la formule du prix : c'est l'erreur relative de
-vol qu'entraîne à elle seule l'erreur d'arrondi de la cotation. **Ce qu'elle montre :** tous les
-points sont sous la diagonale ; l'erreur du solveur n'excède jamais le bruit de la cotation, et la
-dégradation dans la monnaie suit exactement ce bruit. **Pourquoi c'est important :** une vol
-implicite imprécise tirée d'une cotation dans la monnaie n'est pas un défaut du solveur mais une
-perte d'information dans la cotation elle-même ; aucun solveur ne peut la récupérer.*
-Source : [`data/results/iv_roundtrip.csv`](../data/results/iv_roundtrip.csv).
+*Figure 1 — Price → vol → price round trip on the 315-point grid, for the out-of-the-money (blue)
+and in-the-money (orange) quote at each point. On the x-axis, the noise bound
+ε·(1 + (1 + d²)(a + b)/(σ·vega)), where a − b is the price formula: the relative vol error that
+the rounding of the quote causes on its own. **What it shows:** every point lies below the
+diagonal; the solver's error never exceeds the noise in the quote, and the in-the-money degradation
+tracks that noise exactly. **Why it matters:** an inaccurate implied vol taken from an
+in-the-money quote is not a solver defect but information lost in the quote itself; no solver can
+recover it.* Source: [`data/results/iv_roundtrip.csv`](../data/results/iv_roundtrip.csv).
 
-| Cotation | Résolus | Erreur relative max | Au-delà de 10⁻⁹ | Erreur / borne, max |
+| Quote | Solved | Max relative error | Above 10⁻⁹ | Max error / bound |
 |---|---|---|---|---|
-| Hors de la monnaie | 289 / 315 | 1,3 × 10⁻¹³ | 0 | 0,68 |
-| Dans la monnaie | 226 / 315 | 5,7 × 10⁻² | 19 | 0,64 |
+| Out of the money | 289 / 315 | 1.3 × 10⁻¹³ | 0 | 0.68 |
+| In the money | 226 / 315 | 5.7 × 10⁻² | 19 | 0.64 |
 
-Les 26 cotations hors de la monnaie non résolues ont un prix nul par dépassement de capacité
-inférieur (par exemple 1 jour, K/S = 2, σ = 5 %) : il n'y a pas de vol à retrouver. Les 89
-cotations dans la monnaie non résolues ont une valeur temps inférieure à l'arrondi de leur valeur
-intrinsèque ; le solveur le signale (`ZeroTimeValue`) au lieu de renvoyer un nombre. Le pire cas
-résolu, un put K = 150 à 3 mois et σ = 10 %, retrouve la vol à 5,7 % près.
+The 26 unsolved out-of-the-money quotes have a price that underflows to zero (for example 1 day,
+K/S = 2, σ = 5 %): there is no vol to recover. The 89 unsolved in-the-money quotes have a time
+value below the rounding of their intrinsic value; the solver reports this (`ZeroTimeValue`)
+instead of returning a number. The worst solved case, a put with K = 150, 3 months and σ = 10 %,
+recovers the vol to within 5.7 %.
 
-**Mécanisme.** Un prix Black-Scholes est une différence a − b de deux termes (pour un call,
-a = S e^{−qT} N(d₁) et b = K e^{−rT} N(d₂)). Dans la queue gaussienne, l'arrondi de d est amplifié
-d'un facteur d, si bien que chaque terme porte une erreur relative d'environ ε·(1 + d²). La
-cotation n'est donc connue qu'à ε·(1 + d²)·(a + b) près. Hors de la monnaie, a + b reste du même
-ordre que le prix et la vol est retrouvée à ~10⁻¹³. Dans la monnaie, a + b ≈ S + K alors que la
-valeur temps est minuscule : la perte atteint plusieurs pour cent.
+**Mechanism.** A Black-Scholes price is a difference a − b of two terms (for a call,
+a = S e^{−qT} N(d₁) and b = K e^{−rT} N(d₂)). In the Gaussian tail the rounding of d is amplified
+by a factor d, so each term carries a relative error of about ε·(1 + d²). The quote is therefore
+only known to within ε·(1 + d²)·(a + b). Out of the money, a + b stays of the order of the price
+and the vol is recovered to ~10⁻¹³. In the money, a + b ≈ S + K while the time value is tiny: the
+loss reaches several percent.
 
-**Parade.** Toujours inverser sur la cotation hors de la monnaie ; une vol implicite tirée d'une
-cotation profondément dans la monnaie doit être accompagnée de sa borne de bruit. La formulation de
-Jäckel (*Let's Be Rational*, 2015) reste la cible pour réduire la part due au pricer lui-même dans
-les ailes.
+**Remedy.** Always invert the out-of-the-money quote; an implied vol taken from a deep in-the-money
+quote must come with its noise bound. Jäckel's formulation (*Let's Be Rational*, 2015) remains the
+target for reducing the pricer's own share of the error in the wings.
 
-### 3.2 Arrondi flottant et courbe en V des différences finies
+### 3.2 Floating-point rounding and the finite-difference V-curve
 
-![Erreur absolue du delta et du gamma par différences finies en fonction du bump relatif](figures/fd_vcurve.svg)
+![Absolute error of finite-difference delta and gamma against the relative bump](figures/fd_vcurve.svg)
 
-*Figure 2 — Erreur absolue du delta et du gamma par différences centrées sur le prix Black-Scholes
-(vecteur canonique), contre la formule fermée, pour un bump relatif h de 10⁻¹⁴ à 10⁻¹. Les
-pointillés marquent les optimums théoriques ε^{1/3} (delta) et ε^{1/4} (gamma). **Ce qu'elle
-montre :** l'erreur a la forme d'un V ; à droite, la troncature décroît en h² ; à gauche, l'arrondi du
-prix croît en ε/h pour le delta et en ε/h² pour le gamma. **Pourquoi c'est important :** diminuer le
-bump ne rend pas un Grec plus précis ; en deçà de l'optimum, il le rend faux, et pour le gamma
-catastrophiquement.* Source : [`data/results/fd_vcurve.csv`](../data/results/fd_vcurve.csv).
+*Figure 2 — Absolute error of central-difference delta and gamma on the Black-Scholes price
+(canonical vector), against the closed form, for a relative bump h from 10⁻¹⁴ to 10⁻¹. Dashed lines
+mark the theoretical optima ε^{1/3} (delta) and ε^{1/4} (gamma). **What it shows:** the error is
+V-shaped; on the right, truncation falls as h²; on the left, price rounding grows as ε/h for delta
+and ε/h² for gamma. **Why it matters:** a smaller bump does not make a Greek more accurate; below
+the optimum it makes it wrong, and for gamma catastrophically so.*
+Source: [`data/results/fd_vcurve.csv`](../data/results/fd_vcurve.csv).
 
-| Bump relatif h | Erreur delta | Erreur gamma (relative) |
+| Relative bump h | Delta error | Gamma error (relative) |
 |---|---|---|
-| 10⁻³ | 8,6 × 10⁻⁷ | 1,2 × 10⁻⁶ |
-| 10⁻⁴ | 8,6 × 10⁻⁹ | 1,4 × 10⁻⁸ |
-| 10⁻⁵ | 8,1 × 10⁻¹¹ | 7,5 × 10⁻⁸ |
-| 10⁻⁸ | 1,7 × 10⁻⁹ | 24 % |
-| 10⁻¹⁴ | 1,1 × 10⁻³ | 7,7 × 10¹¹ |
+| 10⁻³ | 8.6 × 10⁻⁷ | 1.2 × 10⁻⁶ |
+| 10⁻⁴ | 8.6 × 10⁻⁹ | 1.4 × 10⁻⁸ |
+| 10⁻⁵ | 8.1 × 10⁻¹¹ | 7.5 × 10⁻⁸ |
+| 10⁻⁸ | 1.7 × 10⁻⁹ | 24 % |
+| 10⁻¹⁴ | 1.1 × 10⁻³ | 7.7 × 10¹¹ |
 
-Le plancher d'erreur du delta est d'environ 10⁻¹¹ pour h entre 3 × 10⁻⁷ et ε^{1/3} ≈ 6 × 10⁻⁶ ;
-celui du gamma d'environ 10⁻¹⁰ (10⁻⁸ en relatif) autour de h ∈ [10⁻⁵, 10⁻⁴], près de
-ε^{1/4} ≈ 1,2 × 10⁻⁴. Les pics isolés vers le bas (par exemple 4 × 10⁻¹⁵ pour le delta à
-h = 2,4 × 10⁻⁶) sont des changements de signe de l'erreur, pas une précision atteignable. En
-deçà de h ≈ 5 × 10⁻⁹, les 46 points de la grille donnent un gamma faux à 100 % ou plus, dont 15
-exactement nuls : le numérateur p(S + h) − 2p(S) + p(S − h) s'annule au bit près.
+The delta error floor is about 10⁻¹¹ for h between 3 × 10⁻⁷ and ε^{1/3} ≈ 6 × 10⁻⁶; the gamma
+floor is about 10⁻¹⁰ (10⁻⁸ relative) around h ∈ [10⁻⁵, 10⁻⁴], near ε^{1/4} ≈ 1.2 × 10⁻⁴. The
+isolated downward spikes (for example 4 × 10⁻¹⁵ for delta at h = 2.4 × 10⁻⁶) are sign changes of
+the error, not attainable accuracy. Below h ≈ 5 × 10⁻⁹, all 46 grid points give a gamma that is
+100 % wrong or worse, 15 of them exactly zero: the numerator p(S + h) − 2p(S) + p(S − h) cancels to
+the last bit.
 
-**Mécanisme.** Pour la différence centrée, l'erreur de troncature vaut ~(h²S²/6)·∂³V/∂S³ et
-l'erreur d'arrondi ~ε·V/(hS) pour le delta, ~ε·V/(hS)² pour le gamma ; leur somme est minimale
-en h* ∝ ε^{1/3} et ε^{1/4} respectivement. L'expérience divise par le pas effectivement réalisé en
-flottant, et non par le pas voulu, afin que la courbe ne montre que l'arrondi du prix.
+**Mechanism.** For the central difference, the truncation error is ~(h²S²/6)·∂³V/∂S³ and the
+rounding error ~ε·V/(hS) for delta, ~ε·V/(hS)² for gamma; their sum is smallest at h* ∝ ε^{1/3}
+and ε^{1/4} respectively. The experiment divides by the step actually realized in floating point,
+not the intended one, so that the curve shows only the rounding of the price.
 
-**Parade.** Bump relatif, jamais absolu, et proche de l'optimum de l'ordre de dérivation. Un bump
-de 10⁻⁴ en relatif, choix courant, est sûr pour les deux Grecs sur un pricer déterministe. Sur un
-pricer Monte Carlo, le bruit statistique remplace l'arrondi et déplace l'optimum de plusieurs ordres
-de grandeur : c'est l'objet de §6.
-
----
-
-## 4. Arbres : convergence et pathologies
-
-*À rédiger en phase 3.*
-
-## 5. Monte Carlo : convergence et réduction de variance
-
-*À rédiger en phase 4.*
-
-## 6. Estimation des Grecs sous bruit *(section phare)*
-
-*À rédiger en phase 5.*
-
-## 7. Mesures de risque sur positions non linéaires
-
-*À rédiger en phase 6.*
-
-## 8. Risque de modèle au-delà de GBM
-
-*Phase 7, optionnelle ([`riskengine_research.md`](riskengine_research.md) §12.1).*
-
-## 9. Notes d'ingénierie et performance
-
-*À rédiger en phase 8.*
-
-## 10. Limites et travaux futurs
-
-*À rédiger en phase 8.*
-
-## 11. Conclusion : recommandations opérationnelles
-
-*À rédiger en phase 8.*
+**Remedy.** Use a relative bump, never an absolute one, close to the optimum for the order of the
+derivative. A relative bump of 10⁻⁴, a common choice, is safe for both Greeks on a deterministic
+pricer. On a Monte Carlo pricer, statistical noise replaces rounding and moves the optimum by
+several orders of magnitude: that is the subject of §6.
 
 ---
 
-## Annexes
+## 4. Trees: convergence and pathologies
 
-*A. dérivations des estimateurs pathwise et LR ; B. tables de paramètres ; C. valeurs de référence
-et sources ; D. procédure de reproduction (voir §2.2 pour l'état actuel).*
+*To be written in Phase 3.*
+
+## 5. Monte Carlo: convergence and variance reduction
+
+*To be written in Phase 4.*
+
+## 6. Greek estimation under noise *(flagship section)*
+
+*To be written in Phase 5.*
+
+## 7. Risk measures on non-linear positions
+
+*To be written in Phase 6.*
+
+## 8. Model risk beyond GBM
+
+*Phase 7, optional ([`riskengine_research.md`](riskengine_research.md) §12.1).*
+
+## 9. Engineering and performance notes
+
+*To be written in Phase 8.*
+
+## 10. Limitations and future work
+
+*To be written in Phase 8.*
+
+## 11. Conclusion: operational recommendations
+
+*To be written in Phase 8.*
+
+---
+
+## Appendices
+
+*A. derivations of the pathwise and LR estimators; B. parameter tables; C. reference values and
+sources; D. reproduction procedure (see §2.2 for the current state).*
