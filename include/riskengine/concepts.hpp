@@ -2,13 +2,15 @@
 
 #include <concepts>
 
-#include "riskengine/types.hpp"
+#include "riskengine/core/estimate.hpp"
+#include "riskengine/core/market.hpp"
 
 namespace riskengine {
 
-template <typename P>
-concept Pricer = requires(const P p, const OptionSpec& o, const MarketData& m) {
-    { p.price(o, m) } -> std::same_as<PriceResult>;
+// A pricer owns its instrument and prices it against a market state.
+template <class P>
+concept Pricer = requires(const P& p, const MarketState& m) {
+    { p.price(m) } -> std::same_as<Estimate>;
 };
 
 } // namespace riskengine

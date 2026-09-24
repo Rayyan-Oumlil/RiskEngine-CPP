@@ -1,0 +1,7 @@
+#pragma once
+
+// Generated at build time by cmake/GitInfo.cmake. Do not edit.
+namespace riskengine::build_info {
+inline constexpr const char* kGitCommit = "@RISKENGINE_GIT_COMMIT@";
+inline constexpr bool kGitDirty = @RISKENGINE_GIT_DIRTY@;
+} // namespace riskengine::build_info
