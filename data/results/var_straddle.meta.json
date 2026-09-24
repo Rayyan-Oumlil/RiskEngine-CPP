@@ -1,0 +1,30 @@
+{
+  "experiment": "var_straddle",
+  "git_commit": "cee5caebe62fbb732854c93e77fc4f249e82c055",
+  "git_dirty": false,
+  "compiler": "GNU 13.3.0",
+  "build_type": "Release",
+  "cxx_flags": "-O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off -fno-builtin-exp -fno-builtin-log -fno-builtin-erfc -fno-builtin-pow",
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "hardware_threads": 4,
+  "created_utc": "2026-09-24T03:02:26Z",
+  "parameters": {
+    "position": "short 1 call + 1 put, K = 100, T = 30/365, delta-hedged with the underlying",
+    "market": "S = 100, r = 0.05, q = 0, sigma = 0.2",
+    "horizon_years": 0.003968253968253968,
+    "var_level": 0.98999999999999999,
+    "es_level": 0.97499999999999998,
+    "book_delta": 0,
+    "book_gamma": -0.13845528093693735,
+    "book_vega": -22.759772208811622,
+    "book_theta": 27.861859742856925,
+    "mc_scenarios": 1000000,
+    "mc_seed": "SeedKey{2026}: spot normals from stream 0, vol normals from stream 1",
+    "history": "NASDAQCOM and VIXCLS, aligned, 2016-09-12 .. 2026-09-22",
+    "history_days": 2520,
+    "history_realized_vol": 0.22168465972623272,
+    "vol_shock_sd": 0.019723791351826742,
+    "spot_vol_correlation": -0.75291229652601188,
+    "bootstrap": "200 resamples, 95 % percentile interval, SeedKey{7}"
+  }
+}
