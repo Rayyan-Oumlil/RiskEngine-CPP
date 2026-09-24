@@ -24,10 +24,6 @@ struct MonteCarloConfig {
     std::uint64_t pilot_paths = 10'000; // control variates only: paths used to estimate beta
 };
 
-// Streams with the high bit set are reserved for pilot runs, so a pilot can never reuse the
-// numbers of a caller's own stream.
-inline constexpr std::uint32_t kPilotStreamBit = 0x8000'0000u;
-
 // Generic Monte Carlo pricer: any PathModel, any terminal or path payoff, optionally with
 // antithetic variates and a control variate.
 //
@@ -55,7 +51,7 @@ public:
     }
 
     Estimate price(const MarketState& m, SeedKey key) const {
-        assert((key.stream & kPilotStreamBit) == 0);
+        assert((key.stream & kReservedStreamBits) == 0);
         const Model model(m);
         const double discount = std::exp(-m.rate.value * maturity_.value);
 
