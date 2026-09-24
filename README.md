@@ -27,7 +27,7 @@ Full methodology, formulas, and verified reference numbers: [`docs/riskengine_re
 
 ## Status
 
-Phases 1 to 6 of the plan ([`docs/riskengine_research.md`](docs/riskengine_research.md) §12) are done. The report [`docs/model_risk_report.md`](docs/model_risk_report.md) has §2 (reproducibility protocol), §3 (analytic ground truth), §4 (trees), §5 (Monte Carlo), §6 (Greeks under noise, the flagship section) and §7 (risk measures on non-linear positions).
+Phases 0 to 6 and 8 of the plan ([`docs/riskengine_research.md`](docs/riskengine_research.md) §12) are done, and the report [`docs/model_risk_report.md`](docs/model_risk_report.md) is complete: executive summary, reproducibility protocol, analytic ground truth, trees, Monte Carlo, Greeks under noise (the flagship section), risk measures on non-linear positions, performance notes, limitations and operational recommendations. **Numerical-method risk and risk-measure risk are demonstrated; model risk in the strict sense (Phase 7: Heston, Merton) is identified as future work, not covered.**
 
 - **Phase 1, analytic ground truth:** Black-Scholes-Merton with continuous dividend yield, closed-form Greeks, bracketed implied-vol solver, digital and discrete geometric-Asian closed forms, [`docs/conventions.md`](docs/conventions.md). The report shows why an in-the-money quote cannot pin its implied vol and the finite-difference V-curve.
 - **Phase 2, stochastic infrastructure:** Philox 4×32-10, AS241 inverse normal, Welford/Chan accumulators, fixed-block reduction that is bit-identical for any thread count and across GCC/Clang, and the experiment harness (`experiments/` → `data/results/*.csv` + `.meta.json` → `docs/figures/*.svg`).
@@ -35,7 +35,8 @@ Phases 1 to 6 of the plan ([`docs/riskengine_research.md`](docs/riskengine_resea
 - **Phase 4, Monte Carlo:** a generic engine over the `PathModel` concept, antithetic and control variates, randomized QMC (Sobol, Owen scrambling, Brownian bridge). Variance reduction reaches 1,500× and QMC a 344× smaller error on an ATM call; the report shows where each technique fails.
 - **Phase 5, Greeks under noise:** finite differences (independent seeds, common random numbers), pathwise (checked by forward automatic differentiation), likelihood ratio and mixed estimators, on a call and a digital. Measured convergence rates match theory (e.g. −0.40 against −2/5 for the CRN digital delta); the pathwise digital delta converges, with zero standard error, to 0 instead of 0.0188; the report ends with a payoff × regime × Greek recommendation matrix.
 - **Phase 6, risk measures on non-linear positions:** on a delta-hedged short straddle, delta-normal VaR is 0, delta-gamma normal understates the full-revaluation VaR by 41 %, and adding the implied-vol factor doubles it. A 34-year backtest on frozen FRED data (NASDAQ, VIX, T-bill) puts the linear and quadratic methods in the Basel red zone in every 250-day window; historical simulation passes coverage on average but fails Christoffersen's independence test (clustered crisis exceptions). Historical stress scenarios (1987, 2008, 2018, 2020) cost up to 11 times the historical 99 % VaR.
-- **Next:** Phase 8, benchmarks and the final write-up (Phase 7, Heston and Merton, is optional).
+- **Phase 8, performance and write-up:** a Google Benchmark suite (Black-Scholes 34 ns, n = 1,000 tree 0.15 ms, 93 % parallel efficiency on 4 threads), two performance pathologies found and measured (subnormal numbers slowing the tree 9×, fixed with bit-identical results; false sharing 20× on adjacent atomics), and one command, `cmake --build <dir> --target report`, that regenerates every result and figure.
+- **Not built:** Phase 7 (model risk: Heston, Merton), the plan's first optional cut; see report §8.
 
 ## Building
 
@@ -47,18 +48,14 @@ ctest --test-dir build --output-on-failure
 
 Requires a C++20 compiler (GCC, Clang, or MSVC) and CMake 3.25+.
 
-To regenerate the report's results and figures (Release build of a clean tree, run from the repository root; Python tools need `pip install -r tools/requirements.txt`):
+To regenerate the report's results and figures (Release build of a clean tree; Python tools need `pip install -r tools/requirements.txt`):
 
 ```
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
-cmake --build build-release
-for e in fd_vcurve iv_roundtrip mc_convergence mc_coverage mc_efficiency qmc_convergence \
-         tree_convergence tree_greeks greeks_vs_h greeks_vs_n greeks_matrix var_straddle var_backtest \
-         stress_scenarios; do
-  build-release/experiments/$e    # from the repository root: some experiments read data/raw
-done
-python3 tools/make_figures.py
+cmake --build build-release --target report   # every experiment, then every figure (~2.5 min)
 ```
+
+Everything except the timing columns reproduces bit for bit. Benchmarks: see [`bench/README.md`](bench/README.md).
 
 ## License
 

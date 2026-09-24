@@ -50,3 +50,24 @@ foreach(experiment IN LISTS RISKENGINE_EXPERIMENTS)
   add_executable(${experiment} ${experiment}.cpp)
   target_link_libraries(${experiment} PRIVATE riskengine_harness)
 endforeach()
+
+# `cmake --build <dir> --target report`: runs every experiment from the repository root (some read
+# data/raw) and renders every figure, i.e. regenerates data/results and docs/figures. Results meant
+# for the repository must come from a Release build of a clean tree (report Appendix D).
+find_package(Python3 COMPONENTS Interpreter)
+set(report_commands "")
+foreach(experiment IN LISTS RISKENGINE_EXPERIMENTS)
+  list(APPEND report_commands COMMAND $<TARGET_FILE:${experiment}>)
+endforeach()
+if(Python3_Interpreter_FOUND)
+  list(APPEND report_commands COMMAND ${Python3_EXECUTABLE} tools/make_figures.py)
+else()
+  list(APPEND report_commands COMMAND ${CMAKE_COMMAND} -E echo
+       "Python 3 not found: results regenerated, figures not rendered (run tools/make_figures.py)")
+endif()
+add_custom_target(report ${report_commands}
+  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  DEPENDS ${RISKENGINE_EXPERIMENTS}
+  COMMENT "Regenerating the report's results and figures"
+  USES_TERMINAL
+  VERBATIM)
