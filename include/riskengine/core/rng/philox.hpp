@@ -3,6 +3,10 @@
 #include <array>
 #include <cstdint>
 
+#if defined(__AVX2__)
+#include <immintrin.h>
+#endif
+
 namespace riskengine {
 
 // Philox 4x32-10 (Salmon, Moraes, Dror, Shaw 2011, "Parallel random numbers: as easy as 1, 2, 3").
@@ -40,6 +44,35 @@ constexpr Counter generate(Counter c, Key k) {
     }
     return c;
 }
+
+#if defined(__AVX2__)
+// Four Philox calls at once. c[w] holds word w of four counters, one per 64-bit lane, zero-extended
+// (the layout vpmuludq wants: it multiplies the low 32 bits of each 64-bit lane into a full 64-bit
+// product). Only integer multiply, shift, and and xor are involved, so each lane is bit-identical
+// to generate() on that lane's counter.
+inline void generate_x4(__m256i (&c)[4], Key k) {
+    const __m256i m0 = _mm256_set1_epi64x(kMultiplier0);
+    const __m256i m1 = _mm256_set1_epi64x(kMultiplier1);
+    const __m256i low32 = _mm256_set1_epi64x(0xFFFFFFFF);
+    for (int r = 0; r < kRounds; ++r) {
+        if (r > 0) {
+            k[0] += kWeyl0;
+            k[1] += kWeyl1;
+        }
+        const __m256i p0 = _mm256_mul_epu32(c[0], m0);
+        const __m256i p1 = _mm256_mul_epu32(c[2], m1);
+        const __m256i k0 = _mm256_set1_epi64x(k[0]);
+        const __m256i k1 = _mm256_set1_epi64x(k[1]);
+        // round(): {hi(p1) ^ c1 ^ k0, lo(p1), hi(p0) ^ c3 ^ k1, lo(p0)}
+        const __m256i n0 = _mm256_xor_si256(_mm256_xor_si256(_mm256_srli_epi64(p1, 32), c[1]), k0);
+        const __m256i n2 = _mm256_xor_si256(_mm256_xor_si256(_mm256_srli_epi64(p0, 32), c[3]), k1);
+        c[1] = _mm256_and_si256(p1, low32);
+        c[3] = _mm256_and_si256(p0, low32);
+        c[0] = n0;
+        c[2] = n2;
+    }
+}
+#endif
 
 } // namespace philox
 

@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstddef>
@@ -260,3 +261,44 @@ TEST_CASE("RandomStream::normals draws exactly what repeated normal() draws", "[
         CHECK(std::bit_cast<std::uint64_t>(batched.normal()) == std::bit_cast<std::uint64_t>(one_by_one.normal()));
     }
 }
+
+TEST_CASE("RandomStream::uniforms draws exactly what repeated uniform() draws", "[rng][simd]") {
+    RandomStream one_by_one(SeedKey{0xC0FFEE, 5}, 17), batched(SeedKey{0xC0FFEE, 5}, 17);
+    // Lengths around the 8-uniform vector step, each followed by a single draw, so the batch starts
+    // and ends both with and without a pending spare.
+    for (std::size_t n : {0u, 1u, 2u, 7u, 8u, 9u, 15u, 16u, 17u, 64u, 1001u, 3u}) {
+        std::vector<double> u(n);
+        batched.uniforms(u);
+        for (double v : u) CHECK(std::bit_cast<std::uint64_t>(v) == std::bit_cast<std::uint64_t>(one_by_one.uniform()));
+        CHECK(std::bit_cast<std::uint64_t>(batched.uniform()) == std::bit_cast<std::uint64_t>(one_by_one.uniform()));
+    }
+}
+
+#if defined(__AVX2__)
+TEST_CASE("Four-lane Philox matches the scalar generator", "[rng][simd]") {
+    const auto check = [](const std::array<philox::Counter, 4>& in, philox::Key k) {
+        __m256i c[4];
+        for (int w = 0; w < 4; ++w)
+            c[w] = _mm256_set_epi64x(in[3][w], in[2][w], in[1][w], in[0][w]);
+        philox::generate_x4(c, k);
+        alignas(32) std::uint64_t lanes[4][4];
+        for (int w = 0; w < 4; ++w) _mm256_store_si256(reinterpret_cast<__m256i*>(lanes[w]), c[w]);
+        for (int l = 0; l < 4; ++l) {
+            const philox::Counter want = philox::generate(in[l], k);
+            for (int w = 0; w < 4; ++w) CHECK(lanes[w][l] == want[w]);
+        }
+    };
+    // Random123 known-answer counters and keys, one per lane.
+    check({philox::Counter{0, 0, 0, 0}, {0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff},
+           {0x243f6a88, 0x85a308d3, 0x13198a2e, 0x03707344}, {1, 2, 3, 4}},
+          {0xa4093822, 0x299f31d0});
+    // Many random counters, and the index carry into the high word at 2^32.
+    RandomStream rng(SeedKey{99}, 0);
+    const auto word = [&] { return static_cast<std::uint32_t>(rng.uniform() * 0x1p32); };
+    for (int n = 0; n < 25'000; ++n)
+        check({philox::Counter{word(), word(), word(), word()}, {word(), word(), word(), word()},
+               {word(), word(), word(), word()}, {word(), word(), word(), word()}},
+              {word(), word()});
+    check({philox::Counter{0xfffffffe, 0, 7, 1}, {0xffffffff, 0, 7, 1}, {0, 1, 7, 1}, {1, 1, 7, 1}}, {5, 6});
+}
+#endif
