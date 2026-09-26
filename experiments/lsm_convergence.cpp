@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
         exp.param("payoff", "American put, K = 100, T = 1");
         exp.param("market", "S = 100, r = 0.05, q = 0, sigma = 0.2");
         exp.param("tree_reference", tree_reference);
-        exp.param("tree_reference_source", "CRR, n = 20,000 (docs/riskengine_research.md 3.2)");
+        exp.param("tree_reference_source", "CRR, n = 20,000 (docs/model_risk_report.md, Appendix C)");
         exp.param("exercise_dates", steps);
         exp.param("basis", "{1, S, S^2} on in-the-money paths");
         exp.param("seed", "SeedKey{2026, p} for N = 2^p");

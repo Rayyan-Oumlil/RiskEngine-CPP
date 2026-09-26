@@ -9,7 +9,8 @@
 using namespace riskengine;
 
 TEST_CASE("Normal VaR and ES reproduce the reference table", "[var]") {
-    // docs/riskengine_research.md 6.4 (values checked independently when the plan was written).
+    // Analytic normal VaR/ES table, checked independently against SciPy (docs/model_risk_report.md,
+    // Appendix C).
     struct Row {
         double alpha, var, es;
     };

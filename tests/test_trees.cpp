@@ -39,8 +39,8 @@ TEST_CASE("Invalid trees are rejected, never priced", "[tree]") {
                     std::invalid_argument);
 }
 
-TEST_CASE("Reference values at n = 20,000 (docs/riskengine_research.md 3.2)", "[tree][american]") {
-    // CRR, recomputed independently for the research plan.
+TEST_CASE("Reference values at n = 20,000 (docs/model_risk_report.md, Appendix C)", "[tree][american]") {
+    // CRR, recomputed independently (docs/model_risk_report.md, Appendix C).
     CHECK(std::abs(binomial_price(TreeMethod::Crr, kPut, Exercise::European, kMarket, 20000) - 5.573426) < 5e-7);
     CHECK(std::abs(binomial_price(TreeMethod::Crr, kPut, Exercise::American, kMarket, 20000) - 6.090333) < 5e-7);
 }

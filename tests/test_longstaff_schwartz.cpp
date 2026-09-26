@@ -20,7 +20,7 @@ TEST_CASE("LSM American put agrees with the tree within a few standard errors", 
     const LongstaffSchwartz<GBM> lsm(kPut, LongstaffSchwartzConfig{.paths = 100'000, .steps = 50});
     const Estimate e = lsm.price(kMarket, SeedKey{2026});
 
-    // Reference: docs/riskengine_research.md 3.2, CRR at n = 20,000.
+    // Reference: docs/model_risk_report.md Appendix C, CRR at n = 20,000.
     constexpr double kTreeReference = 6.090333;
     INFO("LSM price " << e.value << " +/- " << e.std_error << " (bias estimate " << e.discretization << ")");
     CHECK(std::abs(e.value - kTreeReference) < 4.0 * e.std_error);

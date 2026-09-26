@@ -1,8 +1,6 @@
 # RiskEngine-CPP — Numerical-method, risk-measure and model risk report
 
-> **Status:** complete: every phase of the plan
-> ([`riskengine_research.md`](riskengine_research.md) §12), including the optional model-risk phase
-> (Heston and Merton, §8).
+> **Status:** complete, including the model-risk phase (Heston and Merton, §8).
 >
 > **Editorial rules.** Every figure has a self-contained caption (*what it shows*, then *why it
 > matters*). Every number points to the CSV or test that produced it. Every stochastic estimate is
@@ -313,7 +311,7 @@ powers of u and d. Every variant rejects a lattice whose up probability leaves (
 CRR with Δt > σ²/(r − q)²: such a tree prices with negative probabilities. The tests
 (`tests/test_trees.cpp`) cover these gates:
 
-- the reference values of the plan (CRR, n = 20,000: European put 5.573426, American put 6.090333);
+- the reference values of Appendix C (CRR, n = 20,000: European put 5.573426, American put 6.090333);
 - put-call parity to 10⁻¹¹;
 - the orders of convergence;
 - the American invariants below.
@@ -348,8 +346,7 @@ which is a function of n:
 - **Off the money**, the position of ln(K/S) relative to the grid drifts continuously with n, so
   the constant itself oscillates.
 
-Sampling only even n would give a clean slope of −1 and hide half of the behaviour. It is the
-plan's warning, confirmed.
+Sampling only even n would give a clean slope of −1 and hide half of the behaviour.
 
 Averaging consecutive trees cancels the even/odd part: at the money, n × error falls from ±2 to
 −0.12, a 16-fold gain for the price of a second tree. Off the money it only damps the waves to
@@ -907,7 +904,7 @@ the start of a crisis rather than after it.
 
 ### 7.5 Stress testing
 
-Historical crises ([`riskengine_research.md`](riskengine_research.md) §9.2) are replayed on
+Historical crises are replayed on
 today's book of §7.1–7.3 (σ = 20 %, r = 5 %): each is a joint close-to-close move of the NASDAQ
 Composite, of implied vol (VIX; VXO for 1987, before the VIX existed) and of the 3-month T-bill
 yield, with the decay of its trading days. The loss is also computed with the spot move alone and
@@ -969,8 +966,8 @@ reference (`tools/model_reference.py`):
 - Andersen's case I gives 13.08467, his published value;
 - Heston without vol of vol reduces to Black-Scholes at the integrated variance, at the expected
   O(ξ) rate;
-- simulation matches the closed forms within 4 standard errors for both models (the plan's
-  Phase 7 gate).
+- simulation matches the closed forms within 4 standard errors for both models (the model-risk
+  phase's validation gate).
 
 The three models are **calibrated to the same one-year at-the-money call**, the 20 % Black-Scholes
 price of 10.4506 (S = K = 100, r = 5 %, q = 0). Each keeps a fixed shape:
@@ -1137,7 +1134,7 @@ to other machines better than the absolute numbers.
 
 ### 9.1 What each method costs
 
-| Operation | Median time | Plan target (v1) |
+| Operation | Median time | Target |
 |---|---|---|
 | Black-Scholes price / price + 5 Greeks | 33.6 ns / 36.2 ns | < 100 ns ✓ |
 | Implied vol, ATM / 25 % OTM (Brent on log price, 7–8 iterations) | 566 ns / 650 ns | — |
@@ -1152,14 +1149,14 @@ to other machines better than the absolute numbers.
   more.
 - **Accuracy per microsecond.** For a European option, Leisen-Reimer at n = 1,001 costs the same
   as CRR at n = 1,000 and is about 6,000 times more accurate (§4.2).
-- **Monte Carlo misses the plan's target** of 20 ms per million single-threaded paths by a
+- **Monte Carlo misses its target** of 20 ms per million single-threaded paths by a
   factor of two. One path costs 36.8 ns, of which the normal draw is 14.4 ns (39 %). The rest is
   the exponential of the GBM step, the payoff, the Welford update and the generic path loop of
   the engine (one step, one factor, written for any `PathModel`).
 - **Antithetic variates** draw one normal for two paths, and it shows: 26.1 ms for the same 2²⁰
   payoff evaluations.
 - **What would close the gap:** a batched and vectorized normal generator and `exp`
-  (§10, [`riskengine_research.md`](riskengine_research.md) §8). It was not pursued: nothing in this
+  (§10). It was not pursued: nothing in this
   report is limited by Monte Carlo speed.
 
 ### 9.2 Thread scaling of the Monte Carlo engine
@@ -1174,7 +1171,7 @@ The work is cut into 64 fixed blocks, handed out to threads through an atomic co
 accumulates into its own local Welford, written once, and the partial results are merged in block
 order (§2.2). So the result is bit-identical for every thread count (`tests/test_simulation.cpp`)
 and scaling is close to linear on this machine. The 2-thread point slightly exceeds linear, which
-is within the run-to-run spread. The plan's target of 70 % efficiency at 8 threads cannot be tested
+is within the run-to-run spread. The target of 70 % efficiency at 8 threads cannot be tested
 on 4 vCPUs.
 
 ### 9.3 Two pathologies, measured
@@ -1203,8 +1200,8 @@ changes. The threads write disjoint data, yet adjacent atomic counters are 20 ti
 | Local accumulator written once (the engine's pattern) | 10.0 ms | flat |
 
 - **Why atomics suffer.** Each increment of an atomic counter must own the cache line, so the
-  line bounces between cores: 195 ms against 20.6 ms at 2 threads (9.5×, close to the 9.7× of the
-  plan's v1 measurement), and 457 ms against 22.3 ms at 4.
+  line bounces between cores: 195 ms against 20.6 ms at 2 threads (9.5×, close to the 9.7× of an
+  earlier measurement on another machine), and 457 ms against 22.3 ms at 4.
 - **Why plain stores barely show it.** Each thread reads its own last store back from its store
   buffer and hardly waits for the line. A naive benchmark with plain stores would conclude,
   wrongly, that false sharing does not exist on this machine. The first version of this study did
@@ -1253,7 +1250,7 @@ claims to do, or than a cheaper operation it contains, is a bug until proven oth
 - **Trees.** The node Greeks are validated against Black-Scholes for European options, but only
   against a finer tree of the same kind for the American put. Leisen-Reimer Greeks, whose nodes
   are not centred on the spot, were not implemented.
-- **Monte Carlo speed.** 38.6 ms per million single-threaded paths, twice the plan's target
+- **Monte Carlo speed.** 38.6 ms per million single-threaded paths, twice its target
   (§9.1). Batched, vectorized normal generation and `exp` would close the gap; no result of this
   report was limited by it.
 
@@ -1269,14 +1266,13 @@ claims to do, or than a cheaper operation it contains, is a bug until proven oth
 
 **Engineering.**
 - **Timings.** They come from one 4-vCPU virtual machine. Thread scaling beyond 4 and the
-  vectorization targets of the plan remain untested.
+  vectorization targets remain untested.
 - **Reproducibility.** Bit-for-bit reproducibility is established for GCC and Clang on x86-64.
   MSVC passes every test and draws bit-identical uniforms, but its `log` and `exp` differ in the
   last ulps (`tests/test_rng.cpp` allows 4 ulps there), so its results can differ from the Linux
   ones in the last digits; this is not measured.
 
-**Extensions**, ranked by value for effort in the plan
-([`riskengine_research.md`](riskengine_research.md) §12.1):
+**Extensions**, ranked by value for effort:
 1. the discrete-barrier correction (BGK);
 2. Python bindings for the experiments;
 3. Longstaff-Schwartz under Heston, or on a path-dependent payoff (§4.4 covers only GBM and a
@@ -1427,7 +1423,7 @@ risk-measure book is the 30-day straddle of §7 at the same market. Units follow
 - **Philox 4×32-10:** the Random123 known-answer vectors, checked at compile time.
 - **Sobol direction numbers:** Joe-Kuo, checked bit for bit against SciPy
   (`tools/gen_sobol_directions.py`).
-- **Binomial trees:** the CRR values at n = 20,000 of the research plan (European put 5.573426,
+- **Binomial trees:** CRR at n = 20,000 (European put 5.573426,
   American put 6.090333), recomputed independently.
 - **Normal VaR/ES, Kupiec and Christoffersen statistics:** SciPy (`tests/test_var.cpp`,
   `tests/test_backtest.cpp`).

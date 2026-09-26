@@ -6,8 +6,8 @@ namespace riskengine {
 
 // Forward-mode automatic differentiation: a value and its derivative along one direction.
 // Evaluating a scalar-generic function on Dual{x, 1} returns f(x) and f'(x), exact to rounding,
-// with no bump. Used to cross-check the hand-written pathwise Greeks (docs/riskengine_research.md
-// 2.6): models and payoffs are templates on the scalar type, so the same code runs on double for
+// with no bump. Used to cross-check the hand-written pathwise Greeks (docs/model_risk_report.md
+// 6.3): models and payoffs are templates on the scalar type, so the same code runs on double for
 // pricing and on Dual for derivatives.
 struct Dual {
     double v; // value

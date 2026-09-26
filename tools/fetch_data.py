@@ -3,7 +3,7 @@
 Every series is saved exactly as served by FRED (Federal Reserve Bank of St. Louis) into
 data/raw/<id>.csv, and data/raw/manifest.json records, per file, the source URL, the UTC time of
 extraction, the SHA-256 of the bytes, the number of observations and the date range. Experiments
-only ever read the frozen files (docs/riskengine_research.md 9.1): rerun this script only to refresh
+only ever read the frozen files (docs/conventions.md, Market data): rerun this script only to refresh
 the data on purpose, and commit the result.
 
 Series:

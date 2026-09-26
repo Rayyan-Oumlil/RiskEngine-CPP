@@ -110,7 +110,7 @@ std::pair<double, int> brent_root(F&& f, double a, double b, double fa, double f
 // solver reaches ~1e-13.
 //
 // Jaeckel's "Let's Be Rational" (2015) remains the long-term target (see
-// docs/riskengine_research.md 3.1); this bracketed solver is the robust fallback.
+// docs/model_risk_report.md 10); this bracketed solver is the robust fallback.
 inline ImpliedVolResult implied_vol(const VanillaOption& o, double price, Spot spot, Rate rate, Rate div) {
     constexpr double nan = std::numeric_limits<double>::quiet_NaN();
     const double s = spot.value, k = o.strike.value, r = rate.value, q = div.value, t = o.maturity.value;

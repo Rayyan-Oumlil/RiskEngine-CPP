@@ -94,7 +94,7 @@ TEST_CASE("Heston parameters are validated", "[heston]") {
 }
 
 TEST_CASE("Heston Monte Carlo (QE) agrees with the characteristic function", "[heston][montecarlo]") {
-    // The plan's Phase 7 gate: within 4 standard errors, at a step small enough for the QE bias to be
+    // Validation gate of the model-risk phase: within 4 standard errors, at a step small enough for the QE bias to be
     // negligible against them (report 8.3 measures the bias itself).
     for (const HestonCase& c : {kHeston[0], kHeston[2], kHeston[4]}) {
         INFO(c.name);

@@ -1,4 +1,4 @@
-// Report 7.5: historical stress scenarios (docs/riskengine_research.md 9.2) applied to today's
+// Report 7.5: historical stress scenarios (docs/model_risk_report.md 7.5) applied to today's
 // delta-hedged short straddle (the book of var_straddle: S = K = 100, 30 days, sigma = 20 %,
 // r = 5 %). Each scenario is a joint close-to-close move of the NASDAQ Composite, of implied vol
 // (VIX; VXO for 1987, before the VIX existed) and of the 3-month T-bill yield, with the time decay

@@ -79,7 +79,7 @@ json price_endpoint(const json& body) {
     // Trees. American exercise only makes sense off the European closed form as a reference,
     // so we price both exercise styles here regardless of what the request asked for.
     // Capped at 20,000: the tree's backward induction is O(n^2), so an unbounded n from the
-    // request could hang the server (docs/riskengine_research.md 3.2 uses 20,000 as its own
+    // request could hang the server (the report's own tree reference, Appendix C, uses 20,000 as its
     // reference size, so this ceiling still covers every documented result).
     constexpr std::size_t kMaxTreeSteps = 20'000;
     const unsigned n = static_cast<unsigned>(bounded_size(body, "tree_steps", 1000, kMaxTreeSteps));

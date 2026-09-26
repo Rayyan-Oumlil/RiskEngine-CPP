@@ -25,7 +25,7 @@ target_compile_features(riskengine INTERFACE cxx_std_20)
 find_package(Threads REQUIRED)
 target_link_libraries(riskengine INTERFACE Threads::Threads)
 
-# Reproducibility (docs/riskengine_research.md 10):
+# Reproducibility (docs/model_risk_report.md 2.2):
 # - never let the compiler fuse a*b+c into an FMA on its own, since that changes results between
 #   compilers and target ISAs;
 # - never let it evaluate exp/log/erfc/pow of compile-time constants itself: GCC does so with

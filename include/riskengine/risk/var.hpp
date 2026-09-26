@@ -12,7 +12,7 @@
 #include "riskengine/core/rng/normal_icdf.hpp"
 #include "riskengine/core/rng/random_stream.hpp"
 
-// Value-at-Risk and Expected Shortfall. Conventions (docs/riskengine_research.md 6.3):
+// Value-at-Risk and Expected Shortfall. Conventions (docs/model_risk_report.md 7):
 // - losses are positive (loss = -P&L), and VaR_alpha is a positive loss: 99 % VaR is exceeded on
 //   1 % of days;
 // - the empirical VaR is the ceil(alpha N)-th smallest loss (1-based), found in O(N) with

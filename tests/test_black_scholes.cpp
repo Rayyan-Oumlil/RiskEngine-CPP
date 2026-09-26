@@ -70,7 +70,7 @@ const std::vector<double> kVols = {0.05, 0.1, 0.2, 0.5, 1.0};
 } // namespace
 
 TEST_CASE("Black-Scholes matches high-precision reference values to 1e-9", "[bs][reference]") {
-    // Phase 1 gate (docs/riskengine_research.md 12). Relative tolerance, so the 1e-12 wing
+    // Validation gate of docs/model_risk_report.md 3.1. Relative tolerance, so the 1e-12 wing
     // prices are held to the same 9 significant digits as the at-the-money ones.
     constexpr double tol = 1e-9;
     for (const auto& ref : kReferences) {

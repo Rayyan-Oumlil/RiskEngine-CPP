@@ -1,4 +1,4 @@
-# Micro-benchmarks for report 9 (docs/riskengine_research.md 8). Off by default
+# Micro-benchmarks for report 9. Off by default
 # (-DRISKENGINE_BUILD_BENCH=ON); run on a Release build, see bench/README.md.
 
 include(FetchContent)

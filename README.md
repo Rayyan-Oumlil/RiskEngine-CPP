@@ -18,7 +18,7 @@ The deliverable is [`docs/model_risk_report.md`](docs/model_risk_report.md) — 
 | CRR binomial tree | O(1/n), non-monotonic (oscillates) | American exercise, discrete dividends | Slow, biased at small n unless corrected |
 | Monte Carlo | O(1/√N) | Path-dependent payoffs, high-dimensional problems | Noisy; naive Greeks via bumping are actively wrong without common random numbers |
 
-Full methodology, formulas, and verified reference numbers: [`docs/riskengine_research.md`](docs/riskengine_research.md). The core project (numerical-method risk + risk-measure disagreement) is scoped to these three methods; the model-risk phase adds Heston and Merton to demonstrate genuine model risk (different assumptions, not just different numerics).
+Full methodology, formulas and verified reference numbers: [`docs/model_risk_report.md`](docs/model_risk_report.md) (reference values in Appendix C) and [`docs/conventions.md`](docs/conventions.md). The core project (numerical-method risk + risk-measure disagreement) is scoped to these three methods; the model-risk phase adds Heston and Merton to demonstrate genuine model risk (different assumptions, not just different numerics).
 
 ## Architecture
 
@@ -28,7 +28,7 @@ Full methodology, formulas, and verified reference numbers: [`docs/riskengine_re
 
 ## Status
 
-Every phase of the plan ([`docs/riskengine_research.md`](docs/riskengine_research.md) §12) is done, and the report [`docs/model_risk_report.md`](docs/model_risk_report.md) is complete: executive summary, reproducibility protocol, analytic ground truth, trees, Monte Carlo, Greeks under noise (the flagship section), risk measures on non-linear positions, model risk beyond GBM, performance notes, limitations and operational recommendations.
+The report [`docs/model_risk_report.md`](docs/model_risk_report.md) is complete: executive summary, reproducibility protocol, analytic ground truth, trees, Monte Carlo, Greeks under noise (the flagship section), risk measures on non-linear positions, model risk beyond GBM, performance notes, limitations and operational recommendations.
 
 - **Phase 1, analytic ground truth:** Black-Scholes-Merton with continuous dividend yield, closed-form Greeks, bracketed implied-vol solver, digital and discrete geometric-Asian closed forms, [`docs/conventions.md`](docs/conventions.md). The report shows why an in-the-money quote cannot pin its implied vol and the finite-difference V-curve.
 - **Phase 2, stochastic infrastructure:** Philox 4×32-10, AS241 inverse normal, Welford/Chan accumulators, fixed-block reduction that is bit-identical for any thread count and across GCC/Clang, and the experiment harness (`experiments/` → `data/results/*.csv` + `.meta.json` → `docs/figures/*.svg`).
