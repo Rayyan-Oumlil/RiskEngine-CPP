@@ -215,14 +215,19 @@ void BM_PathStorageMatrix(benchmark::State& state) {
 }
 BENCHMARK(BM_PathStorageMatrix)->Arg(1 << 12)->Arg(1 << 16)->Arg(1 << 18)->Unit(benchmark::kMillisecond);
 
-// End to end: one Longstaff-Schwartz price of the canonical American put, 50 exercise dates.
+// End to end: one Longstaff-Schwartz price of the canonical American put, 50 exercise dates, on
+// range(1) threads (the price is bit-identical for any thread count).
 void BM_LongstaffSchwartz(benchmark::State& state) {
     const auto paths = static_cast<std::uint64_t>(state.range(0));
-    const LongstaffSchwartz<GBM> lsm(kPut, LongstaffSchwartzConfig{.paths = paths, .steps = 50});
+    const auto threads = static_cast<unsigned>(state.range(1));
+    const LongstaffSchwartz<GBM> lsm(kPut, LongstaffSchwartzConfig{.paths = paths, .steps = 50, .threads = threads});
     for (auto _ : state) benchmark::DoNotOptimize(lsm.price(kMarket, SeedKey{2026}));
     state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(paths));
 }
-BENCHMARK(BM_LongstaffSchwartz)->Arg(1 << 16)->Arg(1 << 18)->Unit(benchmark::kMillisecond);
+BENCHMARK(BM_LongstaffSchwartz)
+    ->ArgsProduct({{1 << 16, 1 << 18}, {1, 2, 4}})
+    ->Unit(benchmark::kMillisecond)
+    ->UseRealTime();
 
 // --- Batched normals -------------------------------------------------------------------------------
 

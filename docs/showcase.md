@@ -211,8 +211,11 @@ each step chosen by profiling the one before (report §9.5):
 - **AVX2, exact by construction.** The inverse normal vectorizes only what IEEE 754 rounds
   exactly (+, −, ×, ÷, √, in the scalar order, no FMA) and keeps `log` scalar; Philox runs four
   counters per instruction. Branchless compaction handles the random tail lanes.
-- **Result:** batched normals 121 → 250 M/s; the American put at 2¹⁸ paths **360 → 193 ms
-  (1.86×)**. A CI job runs the whole suite, golden values included, on the AVX2 build.
+- **Threads.** Paths split across threads; at each exercise date a `std::barrier` completion
+  step runs the regression once, in path order, so the price is the same bits on 1 or 64 threads.
+  3.98× on 12 threads; the serial regression (made branchless: 18 → 7.3 ms) is the Amdahl limit.
+- **Result:** batched normals 121 → 250 M/s; the American put at 2¹⁸ paths **372 → 55 ms
+  (6.7×)**, same price. CI runs the whole suite on the AVX2 build and under ThreadSanitizer.
 
 ---
 

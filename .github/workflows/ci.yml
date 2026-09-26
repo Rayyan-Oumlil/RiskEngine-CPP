@@ -68,6 +68,23 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  thread-sanitizer:
+    # ThreadSanitizer over the whole suite: the multithreaded Longstaff-Schwartz (std::barrier per
+    # date), the block-parallel Monte Carlo engine, and the thread-count determinism tests.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Allow TSan's memory layout
+        # Ubuntu 24.04 runners randomize mmap with more bits than TSan supports.
+        run: sudo sysctl vm.mmap_rnd_bits=28
+      - name: Configure
+        run: |
+          CC=clang CXX=clang++ cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo             -DCMAKE_CXX_FLAGS=-fsanitize=thread -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread             -DRISKENGINE_BUILD_EXPERIMENTS=OFF -DRISKENGINE_BUILD_EXAMPLES=OFF
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
   build-server:
     runs-on: ubuntu-latest
     steps:

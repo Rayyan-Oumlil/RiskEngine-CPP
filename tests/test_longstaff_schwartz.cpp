@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <bit>
 #include <cmath>
+#include <cstdint>
 
 #include "riskengine/methods/analytic/black_scholes.hpp"
 #include "riskengine/methods/montecarlo/longstaff_schwartz.hpp"
@@ -84,4 +86,23 @@ TEST_CASE("Single exercise date reduces to a European option", "[lsm][montecarlo
     const Estimate e = lsm.price(kMarket, SeedKey{5});
     const double european = black_scholes_price(kPut, kMarket);
     CHECK(std::abs(e.value - european) < 4.0 * e.std_error);
+}
+
+TEST_CASE("LSM is bit-identical for any thread count", "[lsm][montecarlo][determinism]") {
+    // The price, its standard error and the bias estimate must be the same bits, not just close:
+    // the regression sums and the final average always run on one thread, in path order.
+    const auto bits = [](double x) { return std::bit_cast<std::uint64_t>(x); };
+    const auto price = [](std::uint64_t paths, std::uint32_t steps, unsigned threads) {
+        return LongstaffSchwartz<GBM>(kPut, {.paths = paths, .steps = steps, .threads = threads})
+            .price(kMarket, SeedKey{2026});
+    };
+    for (const auto [paths, steps] : {std::pair<std::uint64_t, std::uint32_t>{20'000, 50}, {20'001, 7}, {5, 3}, {9'000, 1}}) {
+        const Estimate one = price(paths, steps, 1);
+        for (unsigned threads : {2u, 3u, 7u, 16u, 64u}) { // odd splits, more than cores, more than paths
+            const Estimate many = price(paths, steps, threads);
+            CHECK(bits(many.value) == bits(one.value));
+            CHECK(bits(many.std_error) == bits(one.std_error));
+            CHECK(bits(many.discretization) == bits(one.discretization));
+        }
+    }
 }

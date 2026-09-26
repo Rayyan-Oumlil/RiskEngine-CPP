@@ -1238,7 +1238,8 @@ measured side by side in one session, as the median of 5–7 runs.
 | 1. Memory layout | one contiguous row-major buffer; `std::pow(d, j)` replaced by a 51-entry table | 282 ms |
 | 2. Batched draws | a path's 50 normals drawn as one batch, apart from the `exp` loop | 252 ms |
 | 3. AVX2 inverse normal | central 85 % of uniforms inverted four at a time | 211–220 ms |
-| 4. AVX2 Philox | four generator counters per instruction | **193 ms (1.86×)** |
+| 4. AVX2 Philox | four generator counters per instruction | 193 ms (1.86×) |
+| 5. Threads | paths split across 12 threads; one `std::barrier` per exercise date | **55 ms (6.7×)** |
 
 - **Storage alone** is worth far more than its end-to-end share: at 2¹⁸ paths of 50 steps the
   vector of vectors writes at 375 M values/s against 1.1 G/s for the flat buffer (2.9×), because
@@ -1256,12 +1257,29 @@ measured side by side in one session, as the median of 5–7 runs.
   and the tail-side choice branchless (tail lanes fall at random, so each `if` mispredicted),
   took it to 2.2×. The central kernel alone runs at 4.35×; the floor is the scalar `log`.
 
+- **Threads, still bit-identical.** Paths are independent, so simulating, applying the exercise
+  rule and pricing split across threads freely. The two floating-point reductions, the regression
+  sums at each date and the final average, always run on one thread in path order: splitting them
+  would make the rounding depend on the thread count. At each date the threads meet at a
+  `std::barrier` whose completion step, run once, does the regression. Scaling on 6 cores / 12
+  threads: 1.78× on 2, 3.17× on 6, 3.98× on 12. The rest is Amdahl's law: the serial regression.
+  Making it branchless (an out-of-the-money path adds +0.0 instead of being skipped, exact because
+  every term is ≥ 0) cut it from 18 to 7.3 ms. The price of the parallel structure is 7 % at one
+  thread (≈ 215 against ≈ 201 ms, interleaved runs).
+- **A layout that lost.** The fit sweeps all paths at one date, a 400-byte stride in the
+  path-major matrix, so a date-major layout (with a cache-blocked transposition in the simulation)
+  was tried. It cut the fit from 85 to 63 ms but tripled the pricing pass (16 → 50 ms: sweeping
+  dates over a per-path "exercised" flag defeats branch prediction) and lost 7 % overall. It was
+  reverted: a change is kept for its measured total, not for the phase it was aimed at.
+
 **Verification.** The batched functions are compared with the scalar ones as raw bit patterns: a
 million uniforms plus every branch boundary (0, 1, NaN, 0.075 and 0.925 and their neighbours,
 denormals, the r = 5 switch), in place, at every length from 0 to 20, and across the generator's
 spare-uniform state; the four-lane Philox against the scalar one on the Random123 vectors,
-100,000 random counters and the index carry at 2³². A CI job builds with
-`-DRISKENGINE_ENABLE_AVX2=ON` and runs the whole suite, golden values included, on Linux.
+100,000 random counters and the index carry at 2³². Longstaff-Schwartz is compared bit for bit on
+1, 2, 3, 7, 16 and 64 threads, including more threads than paths. CI builds with
+`-DRISKENGINE_ENABLE_AVX2=ON` and runs the whole suite, golden values included, on Linux, and runs
+it again under ThreadSanitizer.
 
 **Rule.** Vectorize what IEEE 754 rounds exactly, keep the rest scalar, and prove bit-identity
 with tests rather than argue it. A faster number that no longer reproduces is a different number.

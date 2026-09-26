@@ -1,11 +1,14 @@
 #pragma once
 
+#include <algorithm>
+#include <barrier>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <thread>
 #include <vector>
 
 #include "riskengine/concepts.hpp"
@@ -21,6 +24,7 @@ struct LongstaffSchwartzConfig {
     std::uint64_t paths;      // simulated paths; half are held out for the exercise-boundary fit
                                // and half for an unbiased re-pricing pass (Longstaff & Schwartz 2001)
     std::uint32_t steps = 50; // equally spaced exercise dates, including maturity
+    unsigned threads = 1;     // worker threads; never changes the result (see LongstaffSchwartz)
 };
 
 namespace detail {
@@ -60,15 +64,24 @@ struct QuadraticFit {
     double operator()(double x) const { return b0 + b1 * x + b2 * x * x; }
 };
 
-inline QuadraticFit fit_quadratic(const std::vector<double>& x, const std::vector<double>& y) {
-    if (x.size() < 3) return {};
-
+// Only the points with use[i] != 0 enter the fit, accumulated in index order.
+//
+// Branchless: an unused point is multiplied by 0.0 and contributes +0.0 to every sum instead of
+// being skipped. That gives the same bits as skipping, because every x and y is finite and >= 0
+// (spots > 0, discounted cash flows >= 0): v * 1.0 == v and v * 0.0 == +0.0 exactly, every running
+// sum is >= +0.0, and s + (+0.0) == s exactly for such s. The branch it replaces depended on whether
+// a random path was in the money, so it mispredicted about half the time.
+inline QuadraticFit fit_quadratic(std::span<const double> x, std::span<const double> y,
+                                  std::span<const unsigned char> use) {
     double s0 = 0, s1 = 0, s2 = 0, s3 = 0, s4 = 0; // sum x^0 .. x^4
     double t0 = 0, t1 = 0, t2 = 0;                 // sum y, x*y, x^2*y
+    std::size_t points = 0;
     for (std::size_t i = 0; i < x.size(); ++i) {
-        const double xi = x[i], yi = y[i];
+        points += use[i];
+        const double w = use[i];                   // 1.0 or 0.0
+        const double xi = x[i] * w, yi = y[i] * w; // exact: v * 1.0 == v, v * 0.0 == +0.0 for finite v >= 0
         const double xi2 = xi * xi;
-        s0 += 1.0;
+        s0 += w;
         s1 += xi;
         s2 += xi2;
         s3 += xi2 * xi;
@@ -77,6 +90,7 @@ inline QuadraticFit fit_quadratic(const std::vector<double>& x, const std::vecto
         t1 += xi * yi;
         t2 += xi2 * yi;
     }
+    if (points < 3) return {};
 
     // Solve [s0 s1 s2; s1 s2 s3; s2 s3 s4] [b0 b1 b2]^T = [t0 t1 t2]^T by Cramer's rule.
     const double det = s0 * (s2 * s4 - s3 * s3) - s1 * (s1 * s4 - s3 * s2) + s2 * (s1 * s3 - s2 * s2);
@@ -111,6 +125,12 @@ inline QuadraticFit fit_quadratic(const std::vector<double>& x, const std::vecto
 // approximation, so the exercise decision it drives is never better than optimal, which pushes the
 // price down. It is reported as (in-sample regression estimate) - (out-of-sample price on the fitted
 // boundary), not folded into std_error, so a caller can tell statistical noise from this bias.
+// Threads (config.threads) split the paths; the result is bit-identical for any thread count.
+// Paths are independent, so simulating them, applying the exercise rule and pricing them can run
+// on any split. The only floating-point reductions - the regression sums at each date and the final
+// average - are always done by one thread, in path order: splitting them would make the rounding,
+// hence the price, depend on the thread count. At each date the threads meet at a std::barrier whose
+// completion step (run once, by one thread) performs that date's regression.
 template <PathModel Model>
 class LongstaffSchwartz {
 public:
@@ -154,23 +174,40 @@ public:
     }
 
 private:
+    unsigned threads_for(std::size_t n) const {
+        return static_cast<unsigned>(std::clamp<std::size_t>(config_.threads, 1, std::max<std::size_t>(n, 1)));
+    }
+
+    // Runs body(begin, end) on `threads` contiguous, disjoint ranges covering [0, n): the calling
+    // thread takes the first, one std::jthread each the others (joined on return).
+    template <class Body>
+    static void for_each_range(std::size_t n, unsigned threads, Body&& body) {
+        std::vector<std::jthread> pool;
+        pool.reserve(threads - 1);
+        for (unsigned t = 1; t < threads; ++t)
+            pool.emplace_back([&, t] { body(n * t / threads, n * (t + 1) / threads); });
+        body(0, n / threads);
+    }
+
     // row(i)[k] is the spot of path i at exercise date k (k = 0 .. steps - 1); date steps - 1 is
     // maturity. Rows generated from block `block_offset + i`, so the fit and pricing halves are
     // statistically independent draws under one key.
     detail::PathMatrix simulate_paths(const Model& model, double dt, SeedKey key, std::uint64_t n,
                                       std::uint64_t block_offset) const {
         detail::PathMatrix paths(n, config_.steps);
-        std::vector<double> z(config_.steps);
-        for (std::uint64_t i = 0; i < n; ++i) {
-            RandomStream rng(key, static_cast<std::uint32_t>(block_offset + i));
-            rng.normals(z); // the path's normals as one batch: same values as step-by-step draws
-            typename Model::State s = model.initial_state();
-            const std::span<double> row = paths.row(i);
-            for (std::uint32_t k = 0; k < config_.steps; ++k) {
-                s = model.step(s, dt, std::span<const double>(&z[k], 1));
-                row[k] = model.spot(s);
+        for_each_range(n, threads_for(n), [&](std::size_t begin, std::size_t end) {
+            std::vector<double> z(config_.steps);
+            for (std::size_t i = begin; i < end; ++i) {
+                RandomStream rng(key, static_cast<std::uint32_t>(block_offset + i));
+                rng.normals(z); // the path's normals as one batch: same values as step-by-step draws
+                typename Model::State s = model.initial_state();
+                const std::span<double> row = paths.row(i);
+                for (std::uint32_t k = 0; k < config_.steps; ++k) {
+                    s = model.step(s, dt, std::span<const double>(&z[k], 1));
+                    row[k] = model.spot(s);
+                }
             }
-        }
+        });
         return paths;
     }
 
@@ -183,36 +220,45 @@ private:
                                                              const VanillaPayoff& payoff,
                                                              const std::vector<double>& discount) const {
         const std::size_t n = paths.rows();
-        std::vector<double> cash_flow(n);
-        std::vector<std::uint32_t> exercised_at(n, config_.steps - 1); // default: only at maturity
-        for (std::size_t i = 0; i < n; ++i) cash_flow[i] = payoff(paths.row(i).back());
+        const std::uint32_t steps = config_.steps;
+        std::vector<double> cash_flow(n), spot(n), continuation(n);
+        std::vector<std::uint32_t> exercised_at(n, steps - 1); // default: only at maturity
+        std::vector<unsigned char> in_the_money(n);
+        std::vector<detail::QuadraticFit> fits(steps - 1);
+        if (steps < 2) return fits;
 
-        std::vector<detail::QuadraticFit> fits(config_.steps - 1);
+        // Completion step of the barrier: runs once per date, on one thread, after every thread has
+        // classified its paths. Dates go backward, so it counts down.
+        std::uint32_t date = steps - 1;
+        const auto regress = [&]() noexcept {
+            --date;
+            fits[date] = detail::fit_quadratic(spot, continuation, in_the_money);
+        };
+        const unsigned threads = threads_for(n);
+        std::barrier sync(threads, regress);
 
-        for (std::uint32_t k = config_.steps - 1; k-- > 0;) {
-            std::vector<double> itm_spot, itm_continuation;
-            for (std::size_t i = 0; i < n; ++i) {
-                const double spot = paths.row(i)[k];
-                const double immediate = payoff(spot);
-                if (immediate <= 0.0) continue; // out of the money: never optimal to exercise here
-                const double discounted_future = cash_flow[i] * discount[exercised_at[i] - k];
-                itm_spot.push_back(spot);
-                itm_continuation.push_back(discounted_future);
-            }
-
-            const detail::QuadraticFit fit = detail::fit_quadratic(itm_spot, itm_continuation);
-            fits[k] = fit;
-
-            for (std::size_t i = 0; i < n; ++i) {
-                const double spot = paths.row(i)[k];
-                const double immediate = payoff(spot);
-                if (immediate <= 0.0) continue;
-                if (immediate > fit(spot)) {
-                    cash_flow[i] = immediate;
-                    exercised_at[i] = k;
+        for_each_range(n, threads, [&](std::size_t begin, std::size_t end) {
+            for (std::size_t i = begin; i < end; ++i) cash_flow[i] = payoff(paths.row(i).back());
+            for (std::uint32_t k = steps - 1; k-- > 0;) {
+                for (std::size_t i = begin; i < end; ++i) { // this thread's paths at date k
+                    spot[i] = paths.row(i)[k];
+                    in_the_money[i] = payoff(spot[i]) > 0.0; // out of the money: never optimal to exercise
+                    if (in_the_money[i]) continuation[i] = cash_flow[i] * discount[exercised_at[i] - k];
                 }
+                sync.arrive_and_wait(); // every path classified; fits[k] computed by the completion step
+                const detail::QuadraticFit& fit = fits[k];
+                for (std::size_t i = begin; i < end; ++i) {
+                    if (!in_the_money[i]) continue;
+                    const double immediate = payoff(spot[i]);
+                    if (immediate > fit(spot[i])) {
+                        cash_flow[i] = immediate;
+                        exercised_at[i] = k;
+                    }
+                }
+                // No second barrier: the next date only reads this thread's own paths, and the next
+                // completion step runs only after every thread has classified them again.
             }
-        }
+        });
 
         return fits;
     }
@@ -223,25 +269,23 @@ private:
     // Schwartz 2001 section 3, and what makes the reported price and std_error unbiased.
     Estimate price_along_boundary(const detail::PathMatrix& paths, const std::vector<detail::QuadraticFit>& boundary,
                                   const VanillaPayoff& payoff, const std::vector<double>& discount) const {
-        Welford acc;
-        for (std::size_t i = 0; i < paths.rows(); ++i) {
-            const std::span<const double> path = paths.row(i);
-            double pv = 0.0;
-            bool exercised = false;
-            for (std::uint32_t k = 0; k + 1 < config_.steps; ++k) {
-                const double immediate = payoff(path[k]);
-                if (immediate > 0.0 && k < boundary.size() && boundary[k](path[k]) < immediate) {
-                    pv = immediate * discount[k + 1];
-                    exercised = true;
-                    break;
+        const std::size_t n = paths.rows();
+        std::vector<double> pv(n);
+        for_each_range(n, threads_for(n), [&](std::size_t begin, std::size_t end) {
+            for (std::size_t i = begin; i < end; ++i) {
+                const std::span<const double> path = paths.row(i);
+                pv[i] = payoff(path.back()) * discount[config_.steps]; // held to maturity
+                for (std::uint32_t k = 0; k + 1 < config_.steps; ++k) {
+                    const double immediate = payoff(path[k]);
+                    if (immediate > 0.0 && k < boundary.size() && boundary[k](path[k]) < immediate) {
+                        pv[i] = immediate * discount[k + 1];
+                        break;
+                    }
                 }
             }
-            if (!exercised) {
-                const double maturity_payoff = payoff(path.back());
-                pv = maturity_payoff * discount[config_.steps];
-            }
-            acc.add(pv);
-        }
+        });
+        Welford acc; // the average, by one thread in path order, whatever the thread count
+        for (const double v : pv) acc.add(v);
         return to_estimate(acc);
     }
 
