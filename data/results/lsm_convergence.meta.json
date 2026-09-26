@@ -1,18 +1,18 @@
 {
   "experiment": "lsm_convergence",
-  "git_commit": "7d88cb886b576c8be20d75f22944fa370e988c7e",
+  "git_commit": "9de2313602e9d72a2d736ec3c7734c299ceae336",
   "git_dirty": false,
   "compiler": "GNU 15.2.0",
   "build_type": "Release",
   "cxx_flags": "-O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off -fno-builtin-exp -fno-builtin-log -fno-builtin-erfc -fno-builtin-pow",
   "cpu": "unknown",
   "hardware_threads": 12,
-  "created_utc": "2026-09-24T23:37:14Z",
+  "created_utc": "2026-09-26T00:42:11Z",
   "parameters": {
     "payoff": "American put, K = 100, T = 1",
     "market": "S = 100, r = 0.05, q = 0, sigma = 0.2",
     "tree_reference": 6.090333231728577,
-    "tree_reference_source": "CRR, n = 20,000 (docs/riskengine_research.md 3.2)",
+    "tree_reference_source": "CRR, n = 20,000 (docs/model_risk_report.md, Appendix C)",
     "exercise_dates": 50,
     "basis": "{1, S, S^2} on in-the-money paths",
     "seed": "SeedKey{2026, p} for N = 2^p"
