@@ -1,8 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <vector>
 
@@ -207,5 +209,54 @@ TEST_CASE("AS241 inverse normal: monotone, antisymmetric on the grid, inverts th
         const double tail = std::min(p, 1.0 - p);
         const double tail_of_x = x < 0.0 ? norm_cdf(x) : norm_cdf(-x);
         REQUIRE(std::abs(tail_of_x - tail) <= 1e-13 * tail);
+    }
+}
+
+// The batched inverse normal (vectorized with AVX2 when the build enables it) must return the
+// scalar function's exact bits, not merely close values: every committed result depends on it.
+// Compared as raw bit patterns, so a NaN or a signed zero that differed would also be caught.
+TEST_CASE("Batched inverse normal is bit-identical to the scalar one", "[rng][icdf][simd]") {
+    const auto same_bits = [](double a, double b) { return std::bit_cast<std::uint64_t>(a) == std::bit_cast<std::uint64_t>(b); };
+    std::vector<double> u(1'000'003); // not a multiple of 4 or of the 256-lane block
+    RandomStream rng(SeedKey{314}, 0);
+    for (double& v : u) v = rng.uniform();
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    // Every branch boundary and special value, inserted at an unaligned position.
+    const double edges[] = {0.0, 1.0, nan, -0.1, 1.5, 0.5, 0.075, 0.925, std::nextafter(0.075, 0.0),
+                            std::nextafter(0.075, 1.0), std::nextafter(0.925, 0.0), std::nextafter(0.925, 1.0),
+                            std::numeric_limits<double>::denorm_min(), 1e-300, std::nextafter(1.0, 0.0),
+                            std::exp(-25.0), 1.0 - std::exp(-25.0)}; // r = sqrt(-log) crosses 5 near exp(-25)
+    u.insert(u.begin() + 1'001, std::begin(edges), std::end(edges));
+
+    std::vector<double> batch(u.size());
+    norm_icdf(std::span<const double>(u), std::span<double>(batch));
+    std::size_t mismatches = 0;
+    for (std::size_t i = 0; i < u.size(); ++i) mismatches += !same_bits(batch[i], norm_icdf(u[i]));
+    CHECK(mismatches == 0);
+
+    SECTION("in place, input and output the same buffer") {
+        std::vector<double> inplace = u;
+        norm_icdf(std::span<const double>(inplace), std::span<double>(inplace));
+        std::size_t diff = 0;
+        for (std::size_t i = 0; i < u.size(); ++i) diff += !same_bits(inplace[i], batch[i]);
+        CHECK(diff == 0);
+    }
+    SECTION("every length from 0 to 20, so every remainder path runs") {
+        for (std::size_t n = 0; n <= 20; ++n) {
+            std::vector<double> out(n);
+            norm_icdf(std::span<const double>(u.data() + 1'000, n), std::span<double>(out));
+            for (std::size_t i = 0; i < n; ++i) CHECK(same_bits(out[i], norm_icdf(u[1'000 + i])));
+        }
+    }
+}
+
+TEST_CASE("RandomStream::normals draws exactly what repeated normal() draws", "[rng][simd]") {
+    RandomStream one_by_one(SeedKey{2718, 3}, 9), batched(SeedKey{2718, 3}, 9);
+    // Odd sizes interleaved with single draws, so the stream's spare-uniform state is exercised.
+    for (std::size_t n : {1u, 7u, 50u, 256u, 257u, 3u}) {
+        std::vector<double> z(n);
+        batched.normals(z);
+        for (double v : z) CHECK(std::bit_cast<std::uint64_t>(v) == std::bit_cast<std::uint64_t>(one_by_one.normal()));
+        CHECK(std::bit_cast<std::uint64_t>(batched.normal()) == std::bit_cast<std::uint64_t>(one_by_one.normal()));
     }
 }

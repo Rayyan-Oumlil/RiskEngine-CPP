@@ -15,6 +15,7 @@ option(RISKENGINE_BUILD_BENCH "Build benchmarks" OFF)
 option(RISKENGINE_BUILD_EXPERIMENTS "Build the report experiments" ON)
 option(RISKENGINE_BUILD_EXAMPLES "Build the examples" ON)
 option(RISKENGINE_BUILD_SERVER "Build the local dashboard server (fetches cpp-httplib, nlohmann_json)" OFF)
+option(RISKENGINE_ENABLE_AVX2 "Vectorize random-normal generation with AVX2 (results are bit-identical either way)" OFF)
 
 add_library(riskengine INTERFACE)
 target_include_directories(riskengine INTERFACE
@@ -37,6 +38,16 @@ if(MSVC)
 else()
   target_compile_options(riskengine INTERFACE -Wall -Wextra -Werror -ffp-contract=off
     -fno-builtin-exp -fno-builtin-log -fno-builtin-erfc -fno-builtin-pow)
+endif()
+
+# AVX2 only enables vector kernels that reproduce the scalar bits exactly (core/rng/normal_icdf.hpp).
+# -mavx2 alone does not enable FMA, and -ffp-contract=off above forbids fusing either way.
+if(RISKENGINE_ENABLE_AVX2)
+  if(MSVC)
+    target_compile_options(riskengine INTERFACE /arch:AVX2)
+  else()
+    target_compile_options(riskengine INTERFACE -mavx2)
+  endif()
 endif()
 
 if(RISKENGINE_ENABLE_SANITIZERS AND NOT MSVC)

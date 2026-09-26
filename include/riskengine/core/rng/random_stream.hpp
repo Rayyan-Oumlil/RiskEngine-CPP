@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 
 #include "riskengine/core/rng/normal_icdf.hpp"
 #include "riskengine/core/rng/philox.hpp"
@@ -47,6 +48,13 @@ public:
 
     // Standard normal by inversion, so normal(1 - u) == -normal(u) exactly.
     double normal() { return norm_icdf(uniform()); }
+
+    // Fills z with the next z.size() normals: bit-identical to calling normal() that many times
+    // (same uniforms, same order), but inverts them as a batch, which vectorizes with AVX2.
+    void normals(std::span<double> z) {
+        for (double& v : z) v = uniform();
+        norm_icdf(std::span<const double>(z), z);
+    }
 
 private:
     static double to_uniform(std::uint32_t hi, std::uint32_t lo) {

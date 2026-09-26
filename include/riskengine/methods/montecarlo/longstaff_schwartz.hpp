@@ -160,13 +160,14 @@ private:
     detail::PathMatrix simulate_paths(const Model& model, double dt, SeedKey key, std::uint64_t n,
                                       std::uint64_t block_offset) const {
         detail::PathMatrix paths(n, config_.steps);
+        std::vector<double> z(config_.steps);
         for (std::uint64_t i = 0; i < n; ++i) {
             RandomStream rng(key, static_cast<std::uint32_t>(block_offset + i));
+            rng.normals(z); // the path's normals as one batch: same values as step-by-step draws
             typename Model::State s = model.initial_state();
             const std::span<double> row = paths.row(i);
             for (std::uint32_t k = 0; k < config_.steps; ++k) {
-                const double z = rng.normal();
-                s = model.step(s, dt, std::span<const double>(&z, 1));
+                s = model.step(s, dt, std::span<const double>(&z[k], 1));
                 row[k] = model.spot(s);
             }
         }

@@ -24,4 +24,6 @@ What is measured:
   atomic or plain, against the engine's local accumulators;
 - path storage for Longstaff-Schwartz: `std::vector<std::vector<double>>` (one heap allocation per
   path) against `PathMatrix` (one contiguous allocation), at 2^12, 2^16 and 2^18 paths of 50 steps;
-- one Longstaff-Schwartz price of the canonical American put, end to end, at 2^16 and 2^18 paths.
+- one Longstaff-Schwartz price of the canonical American put, end to end, at 2^16 and 2^18 paths;
+- 4,096 normals drawn one by one or as a batch; build with `-DRISKENGINE_ENABLE_AVX2=ON` to measure
+  the vectorized inverse normal (both builds give identical numbers).

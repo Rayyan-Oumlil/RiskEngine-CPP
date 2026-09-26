@@ -143,9 +143,7 @@ private:
 
         struct Cursor {
             RandomStream rng;
-            void fill(std::span<double> z) {
-                for (double& v : z) v = rng.normal();
-            }
+            void fill(std::span<double> z) { rng.normals(z); }
         };
         Cursor cursor(std::uint32_t block, std::uint64_t) const { return {RandomStream(key, block)}; }
     };

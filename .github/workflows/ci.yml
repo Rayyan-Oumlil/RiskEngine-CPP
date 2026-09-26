@@ -55,6 +55,19 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  simd-avx2:
+    # Builds the AVX2 kernels and runs the whole suite, golden values included: the vectorized
+    # paths must reproduce the committed results bit for bit, not approximately.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRISKENGINE_ENABLE_AVX2=ON
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
   build-server:
     runs-on: ubuntu-latest
     steps:

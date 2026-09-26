@@ -224,6 +224,33 @@ void BM_LongstaffSchwartz(benchmark::State& state) {
 }
 BENCHMARK(BM_LongstaffSchwartz)->Arg(1 << 16)->Arg(1 << 18)->Unit(benchmark::kMillisecond);
 
+// --- Batched normals -------------------------------------------------------------------------------
+
+// 4,096 normals per iteration from one stream, drawn one by one (normal()) or as one batch
+// (normals()). The two produce identical bits; with RISKENGINE_ENABLE_AVX2 the batch inverts the
+// central 85 % of uniforms four at a time and keeps only std::log scalar (core/rng/normal_icdf.hpp).
+void BM_NormalsOneByOne(benchmark::State& state) {
+    std::vector<double> z(4096);
+    RandomStream rng(SeedKey{11}, 0);
+    for (auto _ : state) {
+        for (double& v : z) v = rng.normal();
+        benchmark::DoNotOptimize(z.data());
+    }
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(z.size()));
+}
+BENCHMARK(BM_NormalsOneByOne);
+
+void BM_NormalsBatched(benchmark::State& state) {
+    std::vector<double> z(4096);
+    RandomStream rng(SeedKey{11}, 0);
+    for (auto _ : state) {
+        rng.normals(z);
+        benchmark::DoNotOptimize(z.data());
+    }
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(z.size()));
+}
+BENCHMARK(BM_NormalsBatched);
+
 } // namespace
 
 int main(int argc, char** argv) {
