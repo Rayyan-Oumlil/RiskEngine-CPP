@@ -96,7 +96,7 @@ TEST_CASE("LSM is bit-identical for any thread count", "[lsm][montecarlo][determ
         return LongstaffSchwartz<GBM>(kPut, {.paths = paths, .steps = steps, .threads = threads})
             .price(kMarket, SeedKey{2026});
     };
-    for (const auto [paths, steps] : {std::pair<std::uint64_t, std::uint32_t>{20'000, 50}, {20'001, 7}, {5, 3}, {9'000, 1}}) {
+    for (const auto& [paths, steps] : {std::pair<std::uint64_t, std::uint32_t>{20'000, 50}, {20'001, 7}, {5, 3}, {9'000, 1}}) {
         const Estimate one = price(paths, steps, 1);
         for (unsigned threads : {2u, 3u, 7u, 16u, 64u}) { // odd splits, more than cores, more than paths
             const Estimate many = price(paths, steps, threads);
