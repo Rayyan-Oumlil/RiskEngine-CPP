@@ -69,8 +69,8 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   simd-avx512:
-    # The same suite, 8 lanes wide. Hosted runners may lack AVX-512: then the SIMD, Longstaff-
-    # Schwartz, golden-value and determinism tests run under Intel SDE, which emulates AVX-512.
+    # The same suite, 8 lanes wide: natively when the runner has AVX-512 (hosted runners vary), and
+    # the SIMD, Longstaff-Schwartz, golden-value and determinism tests always under Intel SDE.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -89,11 +89,10 @@ jobs:
       - name: Test (native AVX-512)
         if: steps.cpu.outputs.native == 'true'
         run: ctest --test-dir build --output-on-failure
+      # Always, not only as a fallback: a path that runs only on some runners is a path nobody tests.
       - name: Set up Intel SDE
-        if: steps.cpu.outputs.native != 'true'
         uses: petarpetrovt/setup-sde@v2.4
-      - name: Test (emulated AVX-512)
-        if: steps.cpu.outputs.native != 'true'
+      - name: Test (emulated AVX-512, Intel SDE)
         run: '"$SDE_PATH/sde64" -icx -- build/tests/riskengine_tests "[simd],[lsm],[golden],[determinism]"'
 
   python-bindings:
