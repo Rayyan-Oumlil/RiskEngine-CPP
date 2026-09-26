@@ -1302,8 +1302,11 @@ denormals, the r = 5 switch), in place, at every length from 0 to 20, and across
 spare-uniform state; the four-lane Philox against the scalar one on the Random123 vectors,
 100,000 random counters and the index carry at 2³². Longstaff-Schwartz is compared bit for bit on
 1, 2, 3, 7, 16 and 64 threads, including more threads than paths. CI builds with
-`-DRISKENGINE_ENABLE_AVX2=ON` and runs the whole suite, golden values included, on Linux, and runs
-it again under ThreadSanitizer.
+`-DRISKENGINE_ENABLE_AVX2=ON` and runs the whole suite, golden values included, on Linux; builds with
+`-DRISKENGINE_ENABLE_AVX512=ON` and runs it natively whenever the runner has AVX-512 (hosted runners
+vary, and one without it raises a warning rather than passing silently); and runs it again under
+ThreadSanitizer. The Python module (`python/`) is tested against the same reference values on Linux
+and Windows, and a scalar and an AVX-512 build of it return the same bits.
 
 **Rule.** Vectorize what IEEE 754 rounds exactly, keep the rest scalar, and prove bit-identity
 with tests rather than argue it. A faster number that no longer reproduces is a different number.
