@@ -69,8 +69,10 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   simd-avx512:
-    # The same suite, 8 lanes wide: natively when the runner has AVX-512 (hosted runners vary), and
-    # the SIMD, Longstaff-Schwartz, golden-value and determinism tests always under Intel SDE.
+    # The same suite, 8 lanes wide. Every run compiles it; the tests run natively when the runner has
+    # AVX-512 (hosted runners vary: Intel Xeon 8573C and AMD EPYC 9V74 do, EPYC 7763 does not). No
+    # emulator is used: Intel SDE's download now answers 403 to CI, and QEMU does not emulate
+    # AVX-512. Without the hardware the job says so instead of passing silently.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -89,11 +91,9 @@ jobs:
       - name: Test (native AVX-512)
         if: steps.cpu.outputs.native == 'true'
         run: ctest --test-dir build --output-on-failure
-      # Always, not only as a fallback: a path that runs only on some runners is a path nobody tests.
-      - name: Set up Intel SDE
-        uses: petarpetrovt/setup-sde@v2.4
-      - name: Test (emulated AVX-512, Intel SDE)
-        run: '"$SDE_PATH/sde64" -icx -- build/tests/riskengine_tests "[simd],[lsm],[golden],[determinism]"'
+      - name: No AVX-512 on this runner
+        if: steps.cpu.outputs.native != 'true'
+        run: echo "::warning title=AVX-512 tests not run::This runner has no AVX-512; the AVX-512 build compiled but its tests did not run."
 
   python-bindings:
     # Builds `import riskengine` (nanobind) and runs its pytest suite and the Python quickstart.
