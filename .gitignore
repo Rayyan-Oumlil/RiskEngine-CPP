@@ -25,3 +25,4 @@ compile_commands.json
 __pycache__/
 *.pyc
 .playwright-mcp/
+.pytest_cache/

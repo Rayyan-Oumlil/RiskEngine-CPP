@@ -60,6 +60,26 @@ cmake --build build-release --target report   # every experiment, then every fig
 
 Everything except the timing columns reproduces bit for bit. Benchmarks: see [`bench/README.md`](bench/README.md).
 
+## Python
+
+The engine is also a Python module, built with [nanobind](https://github.com/wjakob/nanobind) over the same headers, so a Python price is the C++ price, bit for bit:
+
+```
+cmake -S . -B build-py -DCMAKE_BUILD_TYPE=Release -DRISKENGINE_BUILD_PYTHON=ON
+cmake --build build-py --target riskengine_python
+PYTHONPATH=build-py/python python examples/quickstart.py
+```
+
+```python
+import riskengine as re
+re.black_scholes(spot=100, strike=100, maturity=1, vol=0.2, rate=0.05)        # 10.450584
+re.longstaff_schwartz(spot=100, strike=100, maturity=1, vol=0.2, rate=0.05,
+                      paths=1 << 17, threads=4)   # Estimate(value=6.004062, std_error=0.027926, ...)
+z = re.normals(1_000_000, seed=2026)             # NumPy array, zero-copy, reproducible from its seed
+```
+
+Also `greeks`, `implied_vol`, `binomial` (five tree methods, American exercise), `monte_carlo`, `heston`, `merton` and `normal_var_es`. Monte Carlo functions release the GIL while they run. Arguments are validated at the boundary (bad inputs raise `ValueError`), and `python/tests` checks the module against the engine's reference values and its thread-count invariance, on Linux and Windows in CI.
+
 ## Local dashboard
 
 A small HTTP server (`server/`) exposes the pricing engine as JSON, with a static page to drive it — a way to explore the engine interactively instead of reading experiment output. It calls the same tested code as everything else (`black_scholes_price`, `binomial_price`, `MonteCarlo<GBM, VanillaPayoff>`, `heston_price`, `merton_price`, `normal_var_es`); it adds no new pricing logic. Not built by default, since it pulls in two extra dependencies (cpp-httplib, nlohmann_json):

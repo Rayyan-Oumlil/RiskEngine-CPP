@@ -94,6 +94,32 @@ jobs:
         if: steps.cpu.outputs.native != 'true'
         run: '"$SDE_PATH/sde64" -icx -- build/tests/riskengine_tests "[simd],[lsm],[golden],[determinism]"'
 
+  python-bindings:
+    # Builds `import riskengine` (nanobind) and runs its pytest suite and the Python quickstart.
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install numpy pytest
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRISKENGINE_BUILD_PYTHON=ON             -DRISKENGINE_BUILD_TESTS=OFF -DRISKENGINE_BUILD_EXPERIMENTS=OFF -DRISKENGINE_BUILD_EXAMPLES=OFF             -DPython_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')"
+      - name: Build
+        run: cmake --build build --config Release --target riskengine_python --parallel 2
+      - name: Test
+        shell: bash
+        run: PYTHONPATH=build/python python -m pytest -q python/tests
+      - name: Example
+        shell: bash
+        run: PYTHONPATH=build/python python examples/quickstart.py
+
   thread-sanitizer:
     # ThreadSanitizer over the whole suite: the multithreaded Longstaff-Schwartz (std::barrier per
     # date), the block-parallel Monte Carlo engine, and the thread-count determinism tests.

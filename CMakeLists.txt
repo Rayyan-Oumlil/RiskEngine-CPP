@@ -17,6 +17,7 @@ option(RISKENGINE_BUILD_EXAMPLES "Build the examples" ON)
 option(RISKENGINE_BUILD_SERVER "Build the local dashboard server (fetches cpp-httplib, nlohmann_json)" OFF)
 option(RISKENGINE_ENABLE_AVX2 "Vectorize random-normal generation with AVX2 (results are bit-identical either way)" OFF)
 option(RISKENGINE_ENABLE_AVX512 "Vectorize random-normal generation with AVX-512F, 8 lanes (results are bit-identical either way)" OFF)
+option(RISKENGINE_BUILD_PYTHON "Build the Python bindings (fetches nanobind; needs Python headers)" OFF)
 
 add_library(riskengine INTERFACE)
 target_include_directories(riskengine INTERFACE
@@ -88,4 +89,8 @@ endif()
 
 if(RISKENGINE_BUILD_SERVER)
   add_subdirectory(server)
+endif()
+
+if(RISKENGINE_BUILD_PYTHON)
+  add_subdirectory(python)
 endif()
