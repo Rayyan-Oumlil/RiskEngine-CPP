@@ -1,8 +1,10 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 #if defined(__AVX2__)
 #include <immintrin.h>
@@ -118,6 +120,44 @@ private:
     std::uint64_t index_ = 0;
     double spare_ = 0.0;
     bool has_spare_ = false;
+};
+
+// Hands out one stream's normals, one or a span at a time, from a read-ahead buffer filled by
+// RandomStream::normals. For consumers that need a single normal per path (a European payoff, a
+// Greek estimator), which would otherwise never reach the batched, vectorized generator.
+//
+// Same sequence as calling normal() on the stream repeatedly: the buffer owns its stream and only
+// draws further ahead on it. Nothing else may draw from that stream, which is why it is taken by
+// value. Drawing ahead past the last value used wastes at most one buffer of work.
+class NormalBuffer {
+public:
+    explicit NormalBuffer(RandomStream rng, std::size_t capacity = 512)
+        : rng_(rng), buffer_(capacity), next_(capacity) {}
+
+    double next() {
+        if (next_ == buffer_.size()) refill();
+        return buffer_[next_++];
+    }
+
+    void fill(std::span<double> z) {
+        for (std::size_t i = 0; i < z.size();) {
+            if (next_ == buffer_.size()) refill();
+            const std::size_t n = std::min(z.size() - i, buffer_.size() - next_);
+            std::copy_n(buffer_.begin() + static_cast<std::ptrdiff_t>(next_), n, z.begin() + static_cast<std::ptrdiff_t>(i));
+            next_ += n;
+            i += n;
+        }
+    }
+
+private:
+    void refill() {
+        rng_.normals(buffer_);
+        next_ = 0;
+    }
+
+    RandomStream rng_;
+    std::vector<double> buffer_;
+    std::size_t next_;
 };
 
 } // namespace riskengine

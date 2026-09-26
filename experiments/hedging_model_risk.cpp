@@ -50,7 +50,7 @@ std::vector<std::vector<double>> hedge(const Model& model, std::uint32_t world) 
         auto state = model.initial_state();
         spots[0] = model.spot(state);
         for (std::uint32_t i = 1; i <= kGrid; ++i) {
-            for (double& v : z) v = rng.normal();
+            rng.normals(z);
             state = model.step(state, dt, z);
             spots[i] = model.spot(state);
         }

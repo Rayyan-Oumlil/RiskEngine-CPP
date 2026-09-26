@@ -141,11 +141,13 @@ private:
     struct PseudoRandomNormals {
         SeedKey key;
 
+        // A European path needs a single normal, so draws go through a read-ahead buffer: the stream
+        // is still consumed in order, but in batches the vectorized generator can work on.
         struct Cursor {
-            RandomStream rng;
-            void fill(std::span<double> z) { rng.normals(z); }
+            NormalBuffer normals;
+            void fill(std::span<double> z) { normals.fill(z); }
         };
-        Cursor cursor(std::uint32_t block, std::uint64_t) const { return {RandomStream(key, block)}; }
+        Cursor cursor(std::uint32_t block, std::uint64_t) const { return {NormalBuffer(RandomStream(key, block))}; }
     };
 
     struct QuasiRandomNormals {

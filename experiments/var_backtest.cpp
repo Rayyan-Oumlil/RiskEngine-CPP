@@ -78,7 +78,7 @@ int main(int argc, char** argv) {
 
         std::vector<double> z(kMcScenarios);
         RandomStream rng(SeedKey{2026}, 0);
-        for (double& v : z) v = rng.normal();
+        rng.normals(z);
 
         std::vector<Method> methods{{"delta_normal", {}}, {"delta_gamma_normal", {}}, {"mc_full_revaluation", {}},
                                     {"historical_full_revaluation", {}}};

@@ -86,24 +86,24 @@ Estimate mc_greek(Greek greek, GreekMethod method, const Payoff& payoff, Maturit
 
     const Welford w = reduce_blocks(BlockPlan{config.paths, config.blocks, config.threads},
                                     [&](std::uint32_t b, std::uint64_t n) {
-        RandomStream rng(key, b);
+        NormalBuffer rng(RandomStream(key, b)); // batched draws, in the stream's order
         Welford acc;
         for (std::uint64_t i = 0; i < n; ++i) {
             double sample = 0.0;
             switch (method) {
                 case GreekMethod::FdIndependent: {
-                    const double f_up = payoff(terminal(up, rng.normal()));
-                    const double f_down = payoff(terminal(down, rng.normal()));
+                    const double f_up = payoff(terminal(up, rng.next()));
+                    const double f_down = payoff(terminal(down, rng.next()));
                     if (greek == Greek::Delta) {
                         sample = (f_up - f_down) / (up - down);
                     } else {
-                        const double f_mid = payoff(terminal(s, rng.normal()));
+                        const double f_mid = payoff(terminal(s, rng.next()));
                         sample = (f_up - 2.0 * f_mid + f_down) / (half_step * half_step);
                     }
                     break;
                 }
                 case GreekMethod::FdCrn: {
-                    const double z = rng.normal();
+                    const double z = rng.next();
                     const double f_up = payoff(terminal(up, z)), f_down = payoff(terminal(down, z));
                     sample = greek == Greek::Delta
                                  ? (f_up - f_down) / (up - down)
@@ -111,24 +111,24 @@ Estimate mc_greek(Greek greek, GreekMethod method, const Payoff& payoff, Maturit
                     break;
                 }
                 case GreekMethod::Pathwise: {
-                    const double st = terminal(s, rng.normal());
+                    const double st = terminal(s, rng.next());
                     sample = payoff.derivative(st) * st / s;
                     break;
                 }
                 case GreekMethod::PathwiseDual: {
-                    const Dual st = gbm_terminal_spot(Dual::variable(s), Dual(r), Dual(q), Dual(sigma), t, rng.normal());
+                    const Dual st = gbm_terminal_spot(Dual::variable(s), Dual(r), Dual(q), Dual(sigma), t, rng.next());
                     sample = static_cast<Dual>(payoff(st)).d;
                     break;
                 }
                 case GreekMethod::LikelihoodRatio: {
-                    const double z = rng.normal();
+                    const double z = rng.next();
                     const double f = payoff(terminal(s, z));
                     sample = greek == Greek::Delta ? f * z / (s * sst)
                                                    : f * (z * z - 1.0 - z * sst) / (s * s * sst * sst);
                     break;
                 }
                 case GreekMethod::Mixed: {
-                    const double z = rng.normal();
+                    const double z = rng.next();
                     const double st = terminal(s, z);
                     sample = payoff.derivative(st) * st * (z / sst - 1.0) / (s * s);
                     break;

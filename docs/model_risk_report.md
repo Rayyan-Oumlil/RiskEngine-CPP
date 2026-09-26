@@ -1156,8 +1156,10 @@ to other machines better than the absolute numbers.
 - **Antithetic variates** draw one normal for two paths, and it shows: 26.1 ms for the same 2²⁰
   payoff evaluations.
 - **What would close the gap:** a batched and vectorized normal generator and `exp`. The
-  normal generator is now vectorized, opt-in and bit-identical (§9.5); `exp` is not, and nothing
-  in this report is limited by Monte Carlo speed.
+  normal generator is now batched and vectorized, opt-in and bit-identical (§9.5): on the desktop
+  of §9.5, one million single-threaded paths went from 20.1 to 12.1 ms, inside the 20 ms target.
+  The 36.8 ns per path above is the VM's figure from before that change and was not re-measured
+  there. `exp` is not vectorized, since that would not be bit-identical.
 
 ### 9.2 Thread scaling of the Monte Carlo engine
 
@@ -1257,6 +1259,13 @@ measured side by side in one session, as the median of 5–7 runs.
   and the tail-side choice branchless (tail lanes fall at random, so each `if` mispredicted),
   took it to 2.2×. The central kernel alone runs at 4.35×; the floor is the scalar `log`.
 
+- **The European engine too.** A European path needs one normal, so the engine asked the
+  generator for batches of one and never reached the vectorized code. A read-ahead buffer
+  (`NormalBuffer`) now fills 512 normals at a time from the path's own stream and hands them out one
+  by one: the stream is consumed in the same order, so every value is the same. One million
+  single-threaded paths of the canonical call: 20.1 → 12.1 ms (1.66×); the pathwise delta 26.5 →
+  19.9 ms. The affected experiments (Monte Carlo convergence, Greeks against the bump, the hedging
+  study, the 34-year VaR backtest) were rerun before and after: every CSV is byte-identical.
 - **Threads, still bit-identical.** Paths are independent, so simulating, applying the exercise
   rule and pricing split across threads freely. The two floating-point reductions, the regression
   sums at each date and the final average, always run on one thread in path order: splitting them
@@ -1310,10 +1319,10 @@ with tests rather than argue it. A faster number that no longer reproduces is a 
 - **Trees.** The node Greeks are validated against Black-Scholes for European options, but only
   against a finer tree of the same kind for the American put. Leisen-Reimer Greeks, whose nodes
   are not centred on the spot, were not implemented.
-- **Monte Carlo speed.** 38.6 ms per million single-threaded paths, twice its target
-  (§9.1). Normal generation is now vectorized (§9.5, opt-in); a vectorized `exp` would close the
-  rest of the gap, but not bit-identically; no result of this
-  report was limited by it.
+- **Monte Carlo speed.** 38.6 ms per million single-threaded paths on the VM of §9.1, twice its
+  target; on the desktop of §9.5 the batched, vectorized generator brings it to 12.1 ms, inside
+  the target, but the VM figure has not been re-measured. A vectorized `exp` would go further, but
+  not bit-identically.
 
 **Risk measures.**
 - **Scope.** One book (a delta-hedged straddle), one horizon (one day), one market (NASDAQ).

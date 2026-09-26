@@ -302,3 +302,18 @@ TEST_CASE("Four-lane Philox matches the scalar generator", "[rng][simd]") {
     check({philox::Counter{0xfffffffe, 0, 7, 1}, {0xffffffff, 0, 7, 1}, {0, 1, 7, 1}, {1, 1, 7, 1}}, {5, 6});
 }
 #endif
+
+TEST_CASE("NormalBuffer serves exactly the stream's normals, across refills", "[rng][simd]") {
+    RandomStream reference(SeedKey{77, 2}, 4);
+    NormalBuffer buffer(RandomStream(SeedKey{77, 2}, 4), 16); // tiny capacity: many refills
+    // Single draws and spans of every awkward size, including spans larger than the buffer.
+    for (std::size_t n : {1u, 1u, 15u, 16u, 17u, 1u, 40u, 3u, 0u, 100u}) {
+        if (n == 1) {
+            CHECK(std::bit_cast<std::uint64_t>(buffer.next()) == std::bit_cast<std::uint64_t>(reference.normal()));
+            continue;
+        }
+        std::vector<double> z(n);
+        buffer.fill(z);
+        for (double v : z) CHECK(std::bit_cast<std::uint64_t>(v) == std::bit_cast<std::uint64_t>(reference.normal()));
+    }
+}

@@ -195,7 +195,7 @@ The book is a delta-hedged short straddle. Its one-day 99 % VaR by method:
 |---|---|---|
 | Black-Scholes price (+ Greeks) | 34 ns (36 ns) | < 100 ns ✓ |
 | Tree, n = 1,000 (European / American) | 0.15 ms / 0.52 ms | < 5 ms ✓ |
-| Monte Carlo, 1M paths, one thread | 38.6 ms | < 20 ms ✗ (normals are 39 % of a path) |
+| Monte Carlo, 1M paths, one thread | 38.6 ms (VM); **12.1 ms** after batching + AVX2 (desktop) | < 20 ms ✓ on the desktop |
 | Parallel efficiency, 4 threads | 93 % | — |
 
 Two pathologies were found by measuring and are documented in the report:
@@ -214,6 +214,8 @@ each step chosen by profiling the one before (report §9.5):
 - **Threads.** Paths split across threads; at each exercise date a `std::barrier` completion
   step runs the regression once, in path order, so the price is the same bits on 1 or 64 threads.
   3.98× on 12 threads; the serial regression (made branchless: 18 → 7.3 ms) is the Amdahl limit.
+- **European engine.** One normal per path meant batches of one; a read-ahead buffer feeds it
+  512 at a time from the same stream: 1M paths 20.1 → 12.1 ms, every experiment CSV byte-identical.
 - **Result:** batched normals 121 → 250 M/s; the American put at 2¹⁸ paths **372 → 55 ms
   (6.7×)**, same price. CI runs the whole suite on the AVX2 build and under ThreadSanitizer.
 
@@ -327,8 +329,9 @@ const Estimate e = mc.price(m, SeedKey{2026});     // e.value, e.std_error; same
   - No local volatility, no stochastic rates, no discrete dividends.
 - **Risk-measure scope.** The risk study covers one book (a hedged straddle) on one index, with the
   VIX as the implied-vol proxy.
-- **Timings.** They come from one 4-vCPU virtual machine. Monte Carlo misses its
-  single-thread target by 2×.
+- **Timings.** Report §9.1–9.3 come from one 4-vCPU virtual machine, §9.5 from a desktop; each
+  speedup is measured side by side on one machine. The VM's Monte Carlo figure predates the
+  batched generator and was not re-measured there.
 - **Missing methods.**
   - Longstaff-Schwartz only for a vanilla put or call under GBM (no Heston, no path-dependent
     payoff).
