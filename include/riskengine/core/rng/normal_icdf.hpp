@@ -8,9 +8,7 @@
 #include <limits>
 #include <span>
 
-#if defined(__AVX2__)
-#include <immintrin.h>
-#endif
+#include "riskengine/core/simd.hpp"
 
 namespace riskengine {
 
@@ -82,86 +80,77 @@ inline double norm_icdf(double p) {
     return q < 0.0 ? -x : x;
 }
 
-#if defined(__AVX2__)
+#if defined(RISKENGINE_SIMD)
 namespace detail {
 
-// poly7 on four lanes, in exactly the scalar operation order (multiply, then add, as two separately
-// rounded IEEE operations). No FMA intrinsic: a fused multiply-add rounds once instead of twice and
-// would give different bits from the scalar path, which the project builds with -ffp-contract=off.
-inline __m256d poly7_x4(const double (&c)[8], __m256d x) {
-    __m256d r = _mm256_set1_pd(c[7]);
-    for (int i = 6; i >= 0; --i) r = _mm256_add_pd(_mm256_mul_pd(r, x), _mm256_set1_pd(c[i]));
+// poly7 on a vector, in exactly the scalar operation order (multiply, then add, as two separately
+// rounded IEEE operations). No FMA: a fused multiply-add rounds once instead of twice and would give
+// different bits from the scalar path, which the project builds with -ffp-contract=off.
+template <class S>
+typename S::Vec poly7(const double (&c)[8], typename S::Vec x) {
+    typename S::Vec r = S::set1(c[7]);
+    for (int i = 6; i >= 0; --i) r = S::add(S::mul(r, x), S::set1(c[i]));
     return r;
 }
 
-// The tail formula of norm_icdf on four lanes, given q = p - 0.5 and log(min(p, 1 - p)) computed by
+// The tail formula of norm_icdf on a vector, given q = p - 0.5 and log(min(p, 1 - p)) computed by
 // the caller with the scalar std::log (the one operation here that must stay scalar).
-inline __m256d icdf_tail_x4(__m256d q, __m256d log_min) {
-    const __m256d sign_bit = _mm256_set1_pd(-0.0);
-    const __m256d r = _mm256_sqrt_pd(_mm256_xor_pd(log_min, sign_bit)); // sqrt(-log): both exact
-    const __m256d near = _mm256_cmp_pd(r, _mm256_set1_pd(5.0), _CMP_LE_OQ);
-    const __m256d r1 = _mm256_sub_pd(r, _mm256_set1_pd(1.6));
-    const __m256d r2 = _mm256_sub_pd(r, _mm256_set1_pd(5.0));
-    const __m256d x1 = _mm256_div_pd(poly7_x4(kIcdfTailNum, r1), poly7_x4(kIcdfTailDen, r1));
-    const __m256d x2 = _mm256_div_pd(poly7_x4(kIcdfFarTailNum, r2), poly7_x4(kIcdfFarTailDen, r2));
-    const __m256d x = _mm256_blendv_pd(x2, x1, near);
-    const __m256d negative = _mm256_cmp_pd(q, _mm256_setzero_pd(), _CMP_LT_OQ);
-    return _mm256_blendv_pd(x, _mm256_xor_pd(x, sign_bit), negative);
+template <class S>
+typename S::Vec icdf_tail(typename S::Vec q, typename S::Vec log_min) {
+    const auto r = S::sqrt(S::neg(log_min)); // sqrt(-log): both exact
+    const auto r1 = S::sub(r, S::set1(1.6));
+    const auto r2 = S::sub(r, S::set1(5.0));
+    const auto x1 = S::div(poly7<S>(kIcdfTailNum, r1), poly7<S>(kIcdfTailDen, r1));
+    const auto x2 = S::div(poly7<S>(kIcdfFarTailNum, r2), poly7<S>(kIcdfFarTailDen, r2));
+    const auto x = S::select(S::le(r, S::set1(5.0)), x1, x2);
+    return S::select(S::lt(q, S::set1(0.0)), S::neg(x), x);
 }
 
-} // namespace detail
-#endif
-
-// norm_icdf over a span, bit-identical to calling the scalar norm_icdf on each element: the same
-// values, not merely close ones, so results stay reproducible whether or not a build has AVX2.
-//
-// With AVX2, every operation that IEEE 754 rounds exactly (+, -, *, /, sqrt, sign flips) runs four
-// lanes at a time, in the scalar code's order, so each lane computes the scalar bits. Only std::log
-// stays scalar: vectorized logarithms round differently from libm. The work is split in two passes
-// per block, so a chunk with one tail lane does not drag its three central lanes back to scalar:
-//   1. central lanes (|p - 0.5| <= 0.425, about 85 %) are computed and written with a masked store;
-//      tail lane indices are collected;
-//   2. tail lanes are gathered four at a time: scalar log, then the rest of the formula vectorized.
-// 0, 1, NaN and values outside (0, 1) take the scalar function. `p` and `out` may be the same buffer:
-// pass 1 never writes a tail lane, so pass 2 still reads its original input.
-inline void norm_icdf(std::span<const double> p, std::span<double> out) {
-    assert(p.size() == out.size());
+// Batched norm_icdf at the width of S, over the longest prefix of p that is a whole number of
+// vectors; returns where it stopped. See norm_icdf(span, span) for the scheme.
+template <class S>
+std::size_t norm_icdf_vector(std::span<const double> p, std::span<double> out) {
+    constexpr std::size_t kLanes = S::kLanes;
+    constexpr std::size_t kBlock = 256; // a multiple of every width
+    constexpr unsigned kAll = (1u << kLanes) - 1;
+    const auto half = S::set1(0.5), bound = S::set1(0.425), shift = S::set1(0.180625);
     std::size_t i = 0;
-#if defined(__AVX2__)
-    constexpr std::size_t kBlock = 256;
-    const __m256d half = _mm256_set1_pd(0.5);
-    const __m256d bound = _mm256_set1_pd(0.425);
-    const __m256d shift = _mm256_set1_pd(0.180625);
-    const __m256d sign_bit = _mm256_set1_pd(-0.0);
-    while (p.size() - i >= 4) {
-        const std::size_t end = i + std::min(kBlock, (p.size() - i) & ~std::size_t{3});
+    while (p.size() - i >= kLanes) {
+        const std::size_t end = i + std::min(kBlock, (p.size() - i) / kLanes * kLanes);
         std::uint32_t tail[kBlock];
         std::size_t tails = 0;
 
-        for (std::size_t j = i; j < end; j += 4) { // pass 1: central lanes
-            const __m256d q = _mm256_sub_pd(_mm256_loadu_pd(p.data() + j), half);
-            const __m256d central = _mm256_cmp_pd(_mm256_andnot_pd(sign_bit, q), bound, _CMP_LE_OQ); // NaN: false
-            const __m256d r = _mm256_sub_pd(shift, _mm256_mul_pd(q, q));
-            const __m256d x = _mm256_div_pd(_mm256_mul_pd(q, detail::poly7_x4(detail::kIcdfCentralNum, r)),
-                                            detail::poly7_x4(detail::kIcdfCentralDen, r));
-            const int mask = _mm256_movemask_pd(central);
-            if (mask == 0xF) {
-                _mm256_storeu_pd(out.data() + j, x);
+        for (std::size_t j = i; j < end; j += kLanes) { // pass 1: central lanes
+            const auto q = S::sub(S::load(p.data() + j), half);
+            const auto central = S::le(S::abs(q), bound); // NaN: false
+            const auto r = S::sub(shift, S::mul(q, q));
+            const auto x = S::div(S::mul(q, poly7<S>(kIcdfCentralNum, r)), poly7<S>(kIcdfCentralDen, r));
+            const unsigned mask = S::bits(central);
+            if (mask == kAll) {
+                S::store(out.data() + j, x);
                 continue;
             }
-            _mm256_maskstore_pd(out.data() + j, _mm256_castpd_si256(central), x);
+            S::store(out.data() + j, central, x); // tail lanes untouched: their input survives in place
             // Branchless compaction: tail lanes fall at random positions, so an `if` here would
             // mispredict on ~15 % of lanes. Always write the index; advance the count by 0 or 1.
-            for (int k = 0; k < 4; ++k) {
+            for (std::size_t k = 0; k < kLanes; ++k) {
                 tail[tails] = static_cast<std::uint32_t>(j - i + k);
                 tails += ~mask >> k & 1;
             }
         }
 
-        for (std::size_t t = 0; t < tails; t += 4) { // pass 2: tail lanes, four at a time
-            const std::size_t n = std::min<std::size_t>(4, tails - t);
-            alignas(32) double pin[4] = {0.25, 0.25, 0.25, 0.25}, log_min[4] = {-1.0, -1.0, -1.0, -1.0};
-            bool scalar[4] = {false, false, false, false};
+        for (std::size_t t = 0; t < tails; t += kLanes) { // pass 2: tail lanes, a vector at a time
+            const std::size_t n = std::min(kLanes, tails - t);
+            // Plain (not alignas) arrays, read and written with unaligned vector moves: MinGW GCC does
+            // not realign the stack beyond 16 bytes on Windows (GCC bug 54412), so an over-aligned
+            // local would get aligned 32/64-byte moves at an address that is not aligned.
+            double pin[kLanes], log_min[kLanes];
+            bool scalar[kLanes];
+            for (std::size_t k = 0; k < kLanes; ++k) {
+                pin[k] = 0.25; // padding lanes: harmless values, never stored
+                log_min[k] = -1.0;
+                scalar[k] = false;
+            }
             for (std::size_t k = 0; k < n; ++k) {
                 const double v = p[i + tail[t + k]];
                 pin[k] = v;
@@ -171,12 +160,36 @@ inline void norm_icdf(std::span<const double> p, std::span<double> out) {
                 // minsd, where the ternary is a coin-flip branch on random tails.
                 log_min[k] = std::log(std::min(v, 1.0 - v));
             }
-            alignas(32) double x[4];
-            _mm256_store_pd(x, detail::icdf_tail_x4(_mm256_sub_pd(_mm256_load_pd(pin), half), _mm256_load_pd(log_min)));
+            double x[kLanes];
+            S::store(x, icdf_tail<S>(S::sub(S::load(pin), half), S::load(log_min)));
             for (std::size_t k = 0; k < n; ++k) out[i + tail[t + k]] = scalar[k] ? norm_icdf(pin[k]) : x[k];
         }
         i = end;
     }
+    return i;
+}
+
+} // namespace detail
+#endif
+
+// norm_icdf over a span, bit-identical to calling the scalar norm_icdf on each element: the same
+// values, not merely close ones, so results stay reproducible whatever the build's vector width.
+//
+// With AVX2 (4 lanes) or AVX-512F (8 lanes), every operation that IEEE 754 rounds exactly (+, -, *,
+// /, sqrt, sign flips) runs a vector at a time, in the scalar code's order, so each lane computes the
+// scalar bits. Only std::log stays scalar: vectorized logarithms round differently from libm. The
+// work is split in two passes per block, so a vector with one tail lane does not drag its central
+// lanes back to scalar:
+//   1. central lanes (|p - 0.5| <= 0.425, about 85 %) are computed and written with a masked store;
+//      tail lane indices are collected;
+//   2. tail lanes are gathered a vector at a time: scalar log, then the rest of the formula vectorized.
+// 0, 1, NaN and values outside (0, 1) take the scalar function. `p` and `out` may be the same buffer:
+// pass 1 never writes a tail lane, so pass 2 still reads its original input.
+inline void norm_icdf(std::span<const double> p, std::span<double> out) {
+    assert(p.size() == out.size());
+    std::size_t i = 0;
+#if defined(RISKENGINE_SIMD)
+    i = detail::norm_icdf_vector<simd::Widest>(p, out);
 #endif
     for (; i < p.size(); ++i) out[i] = norm_icdf(p[i]);
 }

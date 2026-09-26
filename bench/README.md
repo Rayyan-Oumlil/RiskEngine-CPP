@@ -26,5 +26,5 @@ What is measured:
   path) against `PathMatrix` (one contiguous allocation), at 2^12, 2^16 and 2^18 paths of 50 steps;
 - one Longstaff-Schwartz price of the canonical American put, end to end, at 2^16 and 2^18 paths on
   1, 2 and 4 threads;
-- 4,096 normals drawn one by one or as a batch; build with `-DRISKENGINE_ENABLE_AVX2=ON` to measure
-  the vectorized inverse normal (both builds give identical numbers).
+- 4,096 normals drawn one by one or as a batch; build with `-DRISKENGINE_ENABLE_AVX2=ON` or
+  `-DRISKENGINE_ENABLE_AVX512=ON` to measure the vectorized kernels (every build gives identical numbers).

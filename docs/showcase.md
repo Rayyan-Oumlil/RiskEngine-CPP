@@ -208,16 +208,18 @@ Then the Longstaff-Schwartz hot path was taken apart and rebuilt, **every price 
 each step chosen by profiling the one before (report §9.5):
 - **Memory layout.** 262,144 paths as separate heap allocations became one contiguous buffer
   (storage 2.9× faster), and `std::pow` in the inner loops became a 51-entry table.
-- **AVX2, exact by construction.** The inverse normal vectorizes only what IEEE 754 rounds
-  exactly (+, −, ×, ÷, √, in the scalar order, no FMA) and keeps `log` scalar; Philox runs four
-  counters per instruction. Branchless compaction handles the random tail lanes.
+- **AVX2 and AVX-512, exact by construction.** The inverse normal vectorizes only what IEEE 754
+  rounds exactly (+, −, ×, ÷, √, in the scalar order, no FMA) and keeps `log` scalar; Philox runs
+  4 or 8 counters per instruction. Each kernel is one template over the vector width. Branchless
+  compaction handles the random tail lanes. An intermittent crash (a MinGW stack-alignment bug,
+  GCC 54412) was traced to one aligned store in the disassembly and fixed.
 - **Threads.** Paths split across threads; at each exercise date a `std::barrier` completion
   step runs the regression once, in path order, so the price is the same bits on 1 or 64 threads.
   3.98× on 12 threads; the serial regression (made branchless: 18 → 7.3 ms) is the Amdahl limit.
 - **European engine.** One normal per path meant batches of one; a read-ahead buffer feeds it
   512 at a time from the same stream: 1M paths 20.1 → 12.1 ms, every experiment CSV byte-identical.
-- **Result:** batched normals 121 → 250 M/s; the American put at 2¹⁸ paths **372 → 55 ms
-  (6.7×)**, same price. CI runs the whole suite on the AVX2 build and under ThreadSanitizer.
+- **Result:** inverse normal 5.5 → 1.6 ns per draw with AVX-512; the American put at 2¹⁸ paths
+  **372 → 44 ms (8.2×)**, same price. CI runs the whole suite on the AVX2 build and under ThreadSanitizer.
 
 ---
 

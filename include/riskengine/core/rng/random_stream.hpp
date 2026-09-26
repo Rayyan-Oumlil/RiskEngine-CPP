@@ -6,9 +6,7 @@
 #include <span>
 #include <vector>
 
-#if defined(__AVX2__)
-#include <immintrin.h>
-#endif
+#include "riskengine/core/simd.hpp"
 
 #include "riskengine/core/rng/normal_icdf.hpp"
 #include "riskengine/core/rng/philox.hpp"
@@ -57,14 +55,15 @@ public:
     double normal() { return norm_icdf(uniform()); }
 
     // Fills u with the next u.size() uniforms: bit-identical to calling uniform() that many times,
-    // spare included. With AVX2, four Philox calls (eight uniforms) run at a time.
+    // spare included. With AVX2 or AVX-512F, 4 or 8 Philox calls (8 or 16 uniforms) run at a time.
     void uniforms(std::span<double> u) {
         std::size_t i = 0;
         if (has_spare_ && !u.empty()) u[i++] = uniform(); // hand out the pending spare first
-#if defined(__AVX2__)
-        for (; u.size() - i >= 8; i += 8) {
-            fill8(u.data() + i);
-            index_ += 4;
+#if defined(RISKENGINE_SIMD)
+        using S = simd::Widest;
+        for (; u.size() - i >= 2 * S::kLanes; i += 2 * S::kLanes) {
+            fill_lanes<S>(u.data() + i);
+            index_ += S::kLanes;
         }
 #endif
         for (; i < u.size(); ++i) u[i] = uniform(); // remainder; may leave a spare, as uniform() would
@@ -78,34 +77,33 @@ public:
     }
 
 private:
-#if defined(__AVX2__)
-    // Uniforms 2j and 2j + 1 of Philox calls j = index_ .. index_ + 3, in order, into out[0..7].
-    void fill8(double* out) const {
-        const auto word = [](std::uint64_t v) { return static_cast<long long>(v & 0xFFFFFFFFu); };
-        const std::uint64_t j = index_;
-        __m256i c[4] = {
-            _mm256_set_epi64x(word(j + 3), word(j + 2), word(j + 1), word(j)),                 // index, low
-            _mm256_set_epi64x(word((j + 3) >> 32), word((j + 2) >> 32), word((j + 1) >> 32), word(j >> 32)),
-            _mm256_set1_epi64x(block_),
-            _mm256_set1_epi64x(stream_),
-        };
-        philox::generate_x4(c, key_);
-        const __m256d first = to_uniform_x4(c[0], c[1]);  // to_uniform(bits[0], bits[1]) per call
-        const __m256d second = to_uniform_x4(c[2], c[3]); // to_uniform(bits[2], bits[3]) per call
-        // Interleave to call order: first0 second0 first1 second1 | first2 second2 first3 second3.
-        const __m256d lo = _mm256_unpacklo_pd(first, second); // f0 s0 f2 s2
-        const __m256d hi = _mm256_unpackhi_pd(first, second); // f1 s1 f3 s3
-        _mm256_storeu_pd(out, _mm256_permute2f128_pd(lo, hi, 0x20));
-        _mm256_storeu_pd(out + 4, _mm256_permute2f128_pd(lo, hi, 0x31));
+#if defined(RISKENGINE_SIMD)
+    // Uniforms 2j and 2j + 1 of Philox calls j = index_ .. index_ + S::kLanes - 1, in order, into
+    // out[0 .. 2 * S::kLanes).
+    template <class S>
+    void fill_lanes(double* out) const {
+        constexpr int kLanes = S::kLanes;
+        std::uint64_t lo[kLanes], hi[kLanes];
+        for (int l = 0; l < kLanes; ++l) {
+            const std::uint64_t j = index_ + static_cast<std::uint64_t>(l);
+            lo[l] = j & 0xFFFFFFFFu;
+            hi[l] = j >> 32;
+        }
+        typename S::Int c[4] = {S::from_lanes(lo), S::from_lanes(hi), S::set1(std::uint64_t{block_}),
+                                S::set1(std::uint64_t{stream_})};
+        philox::generate_lanes<S>(c, key_);
+        // Per call: to_uniform(bits[0], bits[1]) then to_uniform(bits[2], bits[3]).
+        S::store_interleaved(out, to_uniform_lanes<S>(c[0], c[1]), to_uniform_lanes<S>(c[2], c[3]));
     }
 
-    // to_uniform on four lanes. k < 2^52, so double(k) is exact by the standard trick: put k in the
+    // to_uniform on a vector. k < 2^52, so double(k) is exact by the standard trick: put k in the
     // mantissa of 2^52 and subtract 2^52. (k + 0.5) and the power-of-two scaling are exact too.
-    static __m256d to_uniform_x4(__m256i hi, __m256i lo) {
-        const __m256i k = _mm256_srli_epi64(_mm256_or_si256(_mm256_slli_epi64(hi, 32), lo), 12);
-        const __m256d two52 = _mm256_set1_pd(0x1p52);
-        const __m256d kd = _mm256_sub_pd(_mm256_castsi256_pd(_mm256_or_si256(k, _mm256_castpd_si256(two52))), two52);
-        return _mm256_mul_pd(_mm256_add_pd(kd, _mm256_set1_pd(0.5)), _mm256_set1_pd(0x1p-52));
+    template <class S>
+    static typename S::Vec to_uniform_lanes(typename S::Int hi, typename S::Int lo) {
+        const auto k = S::shr(S::bit_or(S::shl(hi, 32), lo), 12);
+        const auto two52 = S::set1(0x1p52);
+        const auto kd = S::sub(S::as_double(S::bit_or(k, S::as_int(two52))), two52);
+        return S::mul(S::add(kd, S::set1(0.5)), S::set1(0x1p-52));
     }
 #endif
 

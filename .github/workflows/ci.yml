@@ -68,6 +68,32 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  simd-avx512:
+    # The same suite, 8 lanes wide. Hosted runners may lack AVX-512: then the SIMD, Longstaff-
+    # Schwartz, golden-value and determinism tests run under Intel SDE, which emulates AVX-512.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect AVX-512
+        id: cpu
+        run: |
+          if grep -qw avx512f /proc/cpuinfo; then echo "native=true" >> "$GITHUB_OUTPUT"; else echo "native=false" >> "$GITHUB_OUTPUT"; fi
+          grep -m1 "model name" /proc/cpuinfo
+      - name: Configure
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRISKENGINE_ENABLE_AVX512=ON             -DRISKENGINE_BUILD_EXPERIMENTS=OFF -DRISKENGINE_BUILD_EXAMPLES=OFF
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test (native AVX-512)
+        if: steps.cpu.outputs.native == 'true'
+        run: ctest --test-dir build --output-on-failure
+      - name: Set up Intel SDE
+        if: steps.cpu.outputs.native != 'true'
+        uses: petarpetrovt/setup-sde@v2.4
+      - name: Test (emulated AVX-512)
+        if: steps.cpu.outputs.native != 'true'
+        run: '"$SDE_PATH/sde64" -icx -- build/tests/riskengine_tests "[simd],[lsm],[golden],[determinism]"'
+
   thread-sanitizer:
     # ThreadSanitizer over the whole suite: the multithreaded Longstaff-Schwartz (std::barrier per
     # date), the block-parallel Monte Carlo engine, and the thread-count determinism tests.

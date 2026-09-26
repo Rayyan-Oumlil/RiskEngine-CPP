@@ -1241,7 +1241,8 @@ measured side by side in one session, as the median of 5–7 runs.
 | 2. Batched draws | a path's 50 normals drawn as one batch, apart from the `exp` loop | 252 ms |
 | 3. AVX2 inverse normal | central 85 % of uniforms inverted four at a time | 211–220 ms |
 | 4. AVX2 Philox | four generator counters per instruction | 193 ms (1.86×) |
-| 5. Threads | paths split across 12 threads; one `std::barrier` per exercise date | **55 ms (6.7×)** |
+| 5. Threads | paths split across 12 threads; one `std::barrier` per exercise date | 48–55 ms |
+| 6. AVX-512 | the same kernels 8 lanes wide | **44 ms (8.2×)** |
 
 - **Storage alone** is worth far more than its end-to-end share: at 2¹⁸ paths of 50 steps the
   vector of vectors writes at 375 M values/s against 1.1 G/s for the flat buffer (2.9×), because
@@ -1259,6 +1260,20 @@ measured side by side in one session, as the median of 5–7 runs.
   and the tail-side choice branchless (tail lanes fall at random, so each `if` mispredicted),
   took it to 2.2×. The central kernel alone runs at 4.35×; the floor is the scalar `log`.
 
+- **AVX-512, one kernel for both widths.** The Philox and inverse-normal kernels are written once,
+  as templates over a vector-width traits type (`core/simd.hpp`), and instantiated 4 lanes wide
+  (AVX2) or 8 lanes wide (AVX-512F). The traits expose only integer operations and correctly
+  rounded IEEE ones, so both widths return the scalar bits. At 8 lanes the inverse normal costs
+  1.62 ns per draw (2.63 at 4 lanes, 5.5 scalar); a million European paths take 10.0 ms (11.9).
+  A build with AVX-512 still tests the AVX2 instantiation, which it would otherwise never run.
+- **A crash that only appeared sometimes.** The first AVX-512 build crashed on about half of its
+  runs, never under a debugger. The cause was in the compiled code: an aligned 32-byte store to a
+  stack array declared `alignas(64)`, in a function that never realigned the stack. MinGW GCC keeps
+  the Windows stack 16-byte aligned without honouring larger alignments (GCC bug 54412), so the
+  address was aligned only when the stack happened to sit right. The fix removes the over-aligned
+  locals (they were read with unaligned loads anyway) and has the assembler emit unaligned vector
+  moves on MinGW (`-muse-unaligned-vector-move`, free when the address is aligned). The earlier
+  AVX2 code carried the same latent bug; Linux and MSVC builds were never affected.
 - **The European engine too.** A European path needs one normal, so the engine asked the
   generator for batches of one and never reached the vectorized code. A read-ahead buffer
   (`NormalBuffer`) now fills 512 normals at a time from the path's own stream and hands them out one

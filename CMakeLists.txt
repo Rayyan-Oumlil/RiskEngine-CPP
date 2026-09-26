@@ -16,6 +16,7 @@ option(RISKENGINE_BUILD_EXPERIMENTS "Build the report experiments" ON)
 option(RISKENGINE_BUILD_EXAMPLES "Build the examples" ON)
 option(RISKENGINE_BUILD_SERVER "Build the local dashboard server (fetches cpp-httplib, nlohmann_json)" OFF)
 option(RISKENGINE_ENABLE_AVX2 "Vectorize random-normal generation with AVX2 (results are bit-identical either way)" OFF)
+option(RISKENGINE_ENABLE_AVX512 "Vectorize random-normal generation with AVX-512F, 8 lanes (results are bit-identical either way)" OFF)
 
 add_library(riskengine INTERFACE)
 target_include_directories(riskengine INTERFACE
@@ -40,14 +41,27 @@ else()
     -fno-builtin-exp -fno-builtin-log -fno-builtin-erfc -fno-builtin-pow)
 endif()
 
-# AVX2 only enables vector kernels that reproduce the scalar bits exactly (core/rng/normal_icdf.hpp).
-# -mavx2 alone does not enable FMA, and -ffp-contract=off above forbids fusing either way.
-if(RISKENGINE_ENABLE_AVX2)
+# AVX2 / AVX-512F only enable vector kernels that reproduce the scalar bits exactly (core/simd.hpp).
+# -ffp-contract=off above forbids fusing into FMA whatever the target. AVX-512F implies AVX2.
+if(RISKENGINE_ENABLE_AVX512)
+  if(MSVC)
+    target_compile_options(riskengine INTERFACE /arch:AVX512)
+  else()
+    target_compile_options(riskengine INTERFACE -mavx512f)
+  endif()
+elseif(RISKENGINE_ENABLE_AVX2)
   if(MSVC)
     target_compile_options(riskengine INTERFACE /arch:AVX2)
   else()
     target_compile_options(riskengine INTERFACE -mavx2)
   endif()
+endif()
+
+# MinGW GCC keeps the Windows stack only 16-byte aligned but may still spill 32/64-byte vector
+# registers with aligned moves (GCC bug 54412): an intermittent crash, depending on where the stack
+# happens to sit. Have the assembler emit unaligned moves instead, which cost nothing when aligned.
+if(MINGW AND (RISKENGINE_ENABLE_AVX2 OR RISKENGINE_ENABLE_AVX512))
+  target_compile_options(riskengine INTERFACE -Wa,-muse-unaligned-vector-move)
 endif()
 
 if(RISKENGINE_ENABLE_SANITIZERS AND NOT MSVC)

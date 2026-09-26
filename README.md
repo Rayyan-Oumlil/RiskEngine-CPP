@@ -49,7 +49,7 @@ ctest --test-dir build --output-on-failure
 
 Requires a C++20 compiler (GCC, Clang, or MSVC) and CMake 3.25+.
 
-`-DRISKENGINE_ENABLE_AVX2=ON` vectorizes random-normal generation (the AS241 inverse normal, four lanes at a time). Only exactly rounded operations are vectorized and `std::log` stays scalar, so every result is **bit-identical** with or without it — a dedicated CI job runs the full suite, golden values included, on the AVX2 build.
+`-DRISKENGINE_ENABLE_AVX2=ON` (4 lanes) or `-DRISKENGINE_ENABLE_AVX512=ON` (8 lanes) vectorizes random-normal generation: the Philox generator and the AS241 inverse normal, each written once as a template over the vector width (`include/riskengine/core/simd.hpp`). Only exactly rounded operations are vectorized and `std::log` stays scalar, so every result is **bit-identical** with or without it — a dedicated CI job runs the full suite, golden values included, on the AVX2 build.
 
 To regenerate the report's results and figures (Release build of a clean tree; Python tools need `pip install -r tools/requirements.txt`):
 

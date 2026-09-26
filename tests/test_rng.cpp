@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <vector>
 
@@ -274,32 +275,84 @@ TEST_CASE("RandomStream::uniforms draws exactly what repeated uniform() draws", 
     }
 }
 
+#if defined(RISKENGINE_SIMD)
+namespace {
+
+// Every vector width compiled into this build, so a build with AVX-512 still tests the AVX2 kernels
+// (which it would otherwise never run) as well as its own.
+template <class F>
+void for_each_width(F&& f) {
 #if defined(__AVX2__)
-TEST_CASE("Four-lane Philox matches the scalar generator", "[rng][simd]") {
-    const auto check = [](const std::array<philox::Counter, 4>& in, philox::Key k) {
-        __m256i c[4];
-        for (int w = 0; w < 4; ++w)
-            c[w] = _mm256_set_epi64x(in[3][w], in[2][w], in[1][w], in[0][w]);
-        philox::generate_x4(c, k);
-        alignas(32) std::uint64_t lanes[4][4];
-        for (int w = 0; w < 4; ++w) _mm256_store_si256(reinterpret_cast<__m256i*>(lanes[w]), c[w]);
-        for (int l = 0; l < 4; ++l) {
-            const philox::Counter want = philox::generate(in[l], k);
-            for (int w = 0; w < 4; ++w) CHECK(lanes[w][l] == want[w]);
+    f(simd::Avx2{});
+#endif
+#if defined(__AVX512F__)
+    f(simd::Avx512{});
+#endif
+}
+
+// generate_lanes<S> on S::kLanes counters against the scalar generate() on each, word by word.
+template <class S>
+void check_philox_lanes(const std::vector<philox::Counter>& in, philox::Key k) {
+    constexpr int kLanes = S::kLanes;
+    typename S::Int c[4];
+    for (int w = 0; w < 4; ++w) {
+        std::uint64_t words[kLanes];
+        for (int l = 0; l < kLanes; ++l) words[l] = in[static_cast<std::size_t>(l)][static_cast<std::size_t>(w)];
+        c[w] = S::from_lanes(words);
+    }
+    philox::generate_lanes<S>(c, k);
+    for (int w = 0; w < 4; ++w) {
+        std::uint64_t lanes[kLanes]; // not alignas: see the note in normal_icdf.hpp
+        std::memcpy(lanes, &c[w], sizeof lanes);
+        for (int l = 0; l < kLanes; ++l)
+            CHECK(lanes[l] == philox::generate(in[static_cast<std::size_t>(l)], k)[static_cast<std::size_t>(w)]);
+    }
+}
+
+} // namespace
+
+TEST_CASE("Vector Philox matches the scalar generator at every width", "[rng][simd]") {
+    for_each_width([](auto width) {
+        using S = decltype(width);
+        const auto lanes_of = [](std::vector<philox::Counter> v) {
+            v.resize(S::kLanes, philox::Counter{9, 8, 7, 6});
+            return v;
+        };
+        // Random123 known-answer counters and keys.
+        check_philox_lanes<S>(lanes_of({{0, 0, 0, 0}, {0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff},
+                                        {0x243f6a88, 0x85a308d3, 0x13198a2e, 0x03707344}, {1, 2, 3, 4}}),
+                              {0xa4093822, 0x299f31d0});
+        // Many random counters and keys, and the index carry into the high word at 2^32.
+        RandomStream rng(SeedKey{99}, 0);
+        const auto word = [&] { return static_cast<std::uint32_t>(rng.uniform() * 0x1p32); };
+        for (int n = 0; n < 12'500; ++n) {
+            std::vector<philox::Counter> in(S::kLanes);
+            for (auto& c : in) c = {word(), word(), word(), word()};
+            check_philox_lanes<S>(in, {word(), word()});
         }
-    };
-    // Random123 known-answer counters and keys, one per lane.
-    check({philox::Counter{0, 0, 0, 0}, {0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff},
-           {0x243f6a88, 0x85a308d3, 0x13198a2e, 0x03707344}, {1, 2, 3, 4}},
-          {0xa4093822, 0x299f31d0});
-    // Many random counters, and the index carry into the high word at 2^32.
-    RandomStream rng(SeedKey{99}, 0);
-    const auto word = [&] { return static_cast<std::uint32_t>(rng.uniform() * 0x1p32); };
-    for (int n = 0; n < 25'000; ++n)
-        check({philox::Counter{word(), word(), word(), word()}, {word(), word(), word(), word()},
-               {word(), word(), word(), word()}, {word(), word(), word(), word()}},
-              {word(), word()});
-    check({philox::Counter{0xfffffffe, 0, 7, 1}, {0xffffffff, 0, 7, 1}, {0, 1, 7, 1}, {1, 1, 7, 1}}, {5, 6});
+        check_philox_lanes<S>(lanes_of({{0xfffffffe, 0, 7, 1}, {0xffffffff, 0, 7, 1}, {0, 1, 7, 1}, {1, 1, 7, 1}}),
+                              {5, 6});
+    });
+}
+
+TEST_CASE("Vector inverse normal is bit-identical to the scalar one at every width", "[rng][icdf][simd]") {
+    std::vector<double> u(200'003);
+    RandomStream rng(SeedKey{4242}, 1);
+    for (double& v : u) v = rng.uniform();
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double edges[] = {0.0, 1.0, nan, 0.075, 0.925, std::nextafter(0.075, 1.0), std::nextafter(0.925, 0.0),
+                            std::numeric_limits<double>::denorm_min(), std::exp(-25.0), 1.0 - std::exp(-25.0)};
+    u.insert(u.begin() + 777, std::begin(edges), std::end(edges));
+    for_each_width([&](auto width) {
+        using S = decltype(width);
+        std::vector<double> out(u.size());
+        const std::size_t done = detail::norm_icdf_vector<S>(u, out);
+        CHECK(done == u.size() / S::kLanes * S::kLanes);
+        std::size_t mismatches = 0;
+        for (std::size_t i = 0; i < done; ++i)
+            mismatches += std::bit_cast<std::uint64_t>(out[i]) != std::bit_cast<std::uint64_t>(norm_icdf(u[i]));
+        CHECK(mismatches == 0);
+    });
 }
 #endif
 
