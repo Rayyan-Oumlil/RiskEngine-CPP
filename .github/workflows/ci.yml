@@ -80,8 +80,10 @@ jobs:
           if grep -qw avx512f /proc/cpuinfo; then echo "native=true" >> "$GITHUB_OUTPUT"; else echo "native=false" >> "$GITHUB_OUTPUT"; fi
           grep -m1 "model name" /proc/cpuinfo
       - name: Configure
+        # Catch2 normally runs the test binary at build time to list its tests: on a runner without
+        # AVX-512 that is an illegal instruction. PRE_TEST lists them when ctest runs instead.
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRISKENGINE_ENABLE_AVX512=ON             -DRISKENGINE_BUILD_EXPERIMENTS=OFF -DRISKENGINE_BUILD_EXAMPLES=OFF
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRISKENGINE_ENABLE_AVX512=ON             -DRISKENGINE_BUILD_EXPERIMENTS=OFF -DRISKENGINE_BUILD_EXAMPLES=OFF             -DCMAKE_CATCH_DISCOVER_TESTS_DISCOVERY_MODE=PRE_TEST
       - name: Build
         run: cmake --build build --parallel 2
       - name: Test (native AVX-512)
