@@ -21,4 +21,7 @@ What is measured:
 - Monte Carlo on 2^20 paths of the canonical call: pseudo-random on 1 to 4 threads, antithetic,
   randomized QMC;
 - a false-sharing study: per-thread counters adjacent in one cache line or padded to their own,
-  atomic or plain, against the engine's local accumulators.
+  atomic or plain, against the engine's local accumulators;
+- path storage for Longstaff-Schwartz: `std::vector<std::vector<double>>` (one heap allocation per
+  path) against `PathMatrix` (one contiguous allocation), at 2^12, 2^16 and 2^18 paths of 50 steps;
+- one Longstaff-Schwartz price of the canonical American put, end to end, at 2^16 and 2^18 paths.

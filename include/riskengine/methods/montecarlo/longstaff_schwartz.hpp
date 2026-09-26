@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <span>
 #include <vector>
 
 #include "riskengine/concepts.hpp"
@@ -22,6 +24,30 @@ struct LongstaffSchwartzConfig {
 };
 
 namespace detail {
+
+// Row-major storage for `rows` paths of `cols` spots each, as one allocation instead of `rows`
+// separate ones. A std::vector<std::vector<double>> here would scatter every path across the
+// heap with no locality guarantee between them, even though every consumer (the backward
+// induction, the forward pricing pass) walks whole rows in order - exactly the access pattern a
+// flat buffer serves and a vector-of-vectors defeats. unique_ptr<double[]> rather than
+// vector<double> because the buffer is fixed-size for its whole lifetime: no reason to carry a
+// growable container's capacity bookkeeping for something that is never resized after
+// construction.
+class PathMatrix {
+public:
+    PathMatrix(std::size_t rows, std::size_t cols)
+        : rows_(rows), cols_(cols), data_(std::make_unique<double[]>(rows * cols)) {}
+
+    std::span<double> row(std::size_t i) { return {data_.get() + i * cols_, cols_}; }
+    std::span<const double> row(std::size_t i) const { return {data_.get() + i * cols_, cols_}; }
+
+    std::size_t rows() const { return rows_; }
+    std::size_t cols() const { return cols_; }
+
+private:
+    std::size_t rows_, cols_;
+    std::unique_ptr<double[]> data_;
+};
 
 // Fits y ~ b0 + b1 x + b2 x^2 by ordinary least squares (3x3 normal equations, solved directly:
 // the basis is fixed and tiny, so a closed-form Cramer solve is simpler and just as accurate as an
@@ -101,40 +127,47 @@ public:
         const double discount_step = std::exp(-m.rate.value * dt);
         const VanillaPayoff payoff{option_.strike.value, option_.type};
 
+        // discount[j] = discount_step^j. The inner loops need this for every in-the-money path at
+        // every date, but j only ever takes steps + 1 values: precompute them once instead of calling
+        // std::pow millions of times. Each entry comes from the same std::pow call the loops used to
+        // make, so prices are bit-identical.
+        std::vector<double> discount(config_.steps + 1);
+        for (std::uint32_t j = 0; j <= config_.steps; ++j) discount[j] = std::pow(discount_step, static_cast<double>(j));
+
         // Two independent halves, per Longstaff & Schwartz 2001 section 3: fitting and pricing the
         // exercise boundary on the same paths overstates the value (the regression can "see" a
         // path's own future when deciding whether it should have exercised). std_error and
         // discretization below come from the second, out-of-sample half.
         const std::uint64_t half = config_.paths / 2;
-        const std::vector<std::vector<double>> fit_paths = simulate_paths(model, dt, key, half, 0);
-        const std::vector<std::vector<double>> price_paths =
-            simulate_paths(model, dt, key, config_.paths - half, half);
+        const detail::PathMatrix fit_paths = simulate_paths(model, dt, key, half, 0);
+        const detail::PathMatrix price_paths = simulate_paths(model, dt, key, config_.paths - half, half);
 
-        const std::vector<detail::QuadraticFit> boundary = fit_exercise_boundary(fit_paths, payoff, discount_step);
+        const std::vector<detail::QuadraticFit> boundary = fit_exercise_boundary(fit_paths, payoff, discount);
 
-        const Estimate in_sample = price_along_boundary(fit_paths, boundary, payoff, discount_step);
-        const Estimate out_sample = price_along_boundary(price_paths, boundary, payoff, discount_step);
+        const Estimate in_sample = price_along_boundary(fit_paths, boundary, payoff, discount);
+        const Estimate out_sample = price_along_boundary(price_paths, boundary, payoff, discount);
 
         Estimate result = out_sample;
         result.discretization = in_sample.value - out_sample.value; // regression's look-ahead bias
-        result.samples = fit_paths.size() + price_paths.size();
+        result.samples = fit_paths.rows() + price_paths.rows();
         return result;
     }
 
 private:
-    // path[i][k] is the spot of path i at exercise date k (k = 0 .. steps - 1); date steps - 1 is
+    // row(i)[k] is the spot of path i at exercise date k (k = 0 .. steps - 1); date steps - 1 is
     // maturity. Rows generated from block `block_offset + i`, so the fit and pricing halves are
     // statistically independent draws under one key.
-    std::vector<std::vector<double>> simulate_paths(const Model& model, double dt, SeedKey key,
-                                                     std::uint64_t n, std::uint64_t block_offset) const {
-        std::vector<std::vector<double>> paths(n, std::vector<double>(config_.steps));
+    detail::PathMatrix simulate_paths(const Model& model, double dt, SeedKey key, std::uint64_t n,
+                                      std::uint64_t block_offset) const {
+        detail::PathMatrix paths(n, config_.steps);
         for (std::uint64_t i = 0; i < n; ++i) {
             RandomStream rng(key, static_cast<std::uint32_t>(block_offset + i));
             typename Model::State s = model.initial_state();
+            const std::span<double> row = paths.row(i);
             for (std::uint32_t k = 0; k < config_.steps; ++k) {
                 const double z = rng.normal();
                 s = model.step(s, dt, std::span<const double>(&z, 1));
-                paths[i][k] = model.spot(s);
+                row[k] = model.spot(s);
             }
         }
         return paths;
@@ -145,24 +178,24 @@ private:
     // the immediate payoff beats the fitted continuation value. Returns one fit per exercise date
     // before maturity, indexed by date (a default-constructed fit, "never exercise", at a date with
     // fewer than 3 in-the-money paths to regress on).
-    std::vector<detail::QuadraticFit> fit_exercise_boundary(const std::vector<std::vector<double>>& paths,
+    std::vector<detail::QuadraticFit> fit_exercise_boundary(const detail::PathMatrix& paths,
                                                              const VanillaPayoff& payoff,
-                                                             double discount_step) const {
-        const std::size_t n = paths.size();
+                                                             const std::vector<double>& discount) const {
+        const std::size_t n = paths.rows();
         std::vector<double> cash_flow(n);
         std::vector<std::uint32_t> exercised_at(n, config_.steps - 1); // default: only at maturity
-        for (std::size_t i = 0; i < n; ++i) cash_flow[i] = payoff(paths[i].back());
+        for (std::size_t i = 0; i < n; ++i) cash_flow[i] = payoff(paths.row(i).back());
 
         std::vector<detail::QuadraticFit> fits(config_.steps - 1);
 
         for (std::uint32_t k = config_.steps - 1; k-- > 0;) {
             std::vector<double> itm_spot, itm_continuation;
             for (std::size_t i = 0; i < n; ++i) {
-                const double immediate = payoff(paths[i][k]);
+                const double spot = paths.row(i)[k];
+                const double immediate = payoff(spot);
                 if (immediate <= 0.0) continue; // out of the money: never optimal to exercise here
-                const double steps_ahead = static_cast<double>(exercised_at[i] - k);
-                const double discounted_future = cash_flow[i] * std::pow(discount_step, steps_ahead);
-                itm_spot.push_back(paths[i][k]);
+                const double discounted_future = cash_flow[i] * discount[exercised_at[i] - k];
+                itm_spot.push_back(spot);
                 itm_continuation.push_back(discounted_future);
             }
 
@@ -170,9 +203,10 @@ private:
             fits[k] = fit;
 
             for (std::size_t i = 0; i < n; ++i) {
-                const double immediate = payoff(paths[i][k]);
+                const double spot = paths.row(i)[k];
+                const double immediate = payoff(spot);
                 if (immediate <= 0.0) continue;
-                if (immediate > fit(paths[i][k])) {
+                if (immediate > fit(spot)) {
                     cash_flow[i] = immediate;
                     exercised_at[i] = k;
                 }
@@ -186,24 +220,24 @@ private:
     // first date the immediate payoff beats the fitted continuation value (or hold to maturity),
     // discount that one cash flow back to time 0. This is the out-of-sample step of Longstaff &
     // Schwartz 2001 section 3, and what makes the reported price and std_error unbiased.
-    Estimate price_along_boundary(const std::vector<std::vector<double>>& paths,
-                                  const std::vector<detail::QuadraticFit>& boundary, const VanillaPayoff& payoff,
-                                  double discount_step) const {
+    Estimate price_along_boundary(const detail::PathMatrix& paths, const std::vector<detail::QuadraticFit>& boundary,
+                                  const VanillaPayoff& payoff, const std::vector<double>& discount) const {
         Welford acc;
-        for (const std::vector<double>& path : paths) {
+        for (std::size_t i = 0; i < paths.rows(); ++i) {
+            const std::span<const double> path = paths.row(i);
             double pv = 0.0;
             bool exercised = false;
             for (std::uint32_t k = 0; k + 1 < config_.steps; ++k) {
                 const double immediate = payoff(path[k]);
                 if (immediate > 0.0 && k < boundary.size() && boundary[k](path[k]) < immediate) {
-                    pv = immediate * std::pow(discount_step, static_cast<double>(k + 1));
+                    pv = immediate * discount[k + 1];
                     exercised = true;
                     break;
                 }
             }
             if (!exercised) {
                 const double maturity_payoff = payoff(path.back());
-                pv = maturity_payoff * std::pow(discount_step, static_cast<double>(config_.steps));
+                pv = maturity_payoff * discount[config_.steps];
             }
             acc.add(pv);
         }

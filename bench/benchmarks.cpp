@@ -18,6 +18,7 @@
 #include "riskengine/methods/analytic/black_scholes.hpp"
 #include "riskengine/methods/analytic/implied_vol.hpp"
 #include "riskengine/methods/montecarlo/engine.hpp"
+#include "riskengine/methods/montecarlo/longstaff_schwartz.hpp"
 #include "riskengine/methods/tree/binomial.hpp"
 #include "riskengine/models/gbm.hpp"
 #include "riskengine/payoffs/vanilla.hpp"
@@ -177,6 +178,51 @@ BENCHMARK_CAPTURE(BM_FalseSharing, adjacent_store, Layout::AdjacentStore)->Dense
     ->Unit(benchmark::kMillisecond)->UseRealTime();
 BENCHMARK_CAPTURE(BM_FalseSharing, local, Layout::Local)->DenseRange(1, 4)->Unit(benchmark::kMillisecond)
     ->UseRealTime();
+
+// --- Path storage: vector-of-vectors against one contiguous allocation ---------------------------
+
+// Longstaff-Schwartz (methods/montecarlo/longstaff_schwartz.hpp) stores every simulated path to
+// regress on later. A std::vector<std::vector<double>> makes `rows` separate heap allocations,
+// scattered with no locality guarantee between them, even though every consumer walks whole rows
+// in order. PathMatrix is the same shape as one contiguous buffer. Both benchmarks do identical
+// work (write `cols` doubles per row, `rows` rows) so the difference is purely the allocation and
+// locality pattern, not the arithmetic.
+void BM_PathStorageVectorOfVectors(benchmark::State& state) {
+    const auto rows = static_cast<std::size_t>(state.range(0));
+    constexpr std::size_t kCols = 50;
+    for (auto _ : state) {
+        std::vector<std::vector<double>> paths(rows, std::vector<double>(kCols));
+        for (std::size_t i = 0; i < rows; ++i)
+            for (std::size_t k = 0; k < kCols; ++k) paths[i][k] = static_cast<double>(i + k);
+        benchmark::DoNotOptimize(paths);
+    }
+    state.SetItemsProcessed(state.iterations() * rows * kCols);
+}
+BENCHMARK(BM_PathStorageVectorOfVectors)->Arg(1 << 12)->Arg(1 << 16)->Arg(1 << 18)->Unit(benchmark::kMillisecond);
+
+void BM_PathStorageMatrix(benchmark::State& state) {
+    const auto rows = static_cast<std::size_t>(state.range(0));
+    constexpr std::size_t kCols = 50;
+    for (auto _ : state) {
+        detail::PathMatrix paths(rows, kCols);
+        for (std::size_t i = 0; i < rows; ++i) {
+            const std::span<double> row = paths.row(i);
+            for (std::size_t k = 0; k < kCols; ++k) row[k] = static_cast<double>(i + k);
+        }
+        benchmark::DoNotOptimize(paths);
+    }
+    state.SetItemsProcessed(state.iterations() * rows * kCols);
+}
+BENCHMARK(BM_PathStorageMatrix)->Arg(1 << 12)->Arg(1 << 16)->Arg(1 << 18)->Unit(benchmark::kMillisecond);
+
+// End to end: one Longstaff-Schwartz price of the canonical American put, 50 exercise dates.
+void BM_LongstaffSchwartz(benchmark::State& state) {
+    const auto paths = static_cast<std::uint64_t>(state.range(0));
+    const LongstaffSchwartz<GBM> lsm(kPut, LongstaffSchwartzConfig{.paths = paths, .steps = 50});
+    for (auto _ : state) benchmark::DoNotOptimize(lsm.price(kMarket, SeedKey{2026}));
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(paths));
+}
+BENCHMARK(BM_LongstaffSchwartz)->Arg(1 << 16)->Arg(1 << 18)->Unit(benchmark::kMillisecond);
 
 } // namespace
 
