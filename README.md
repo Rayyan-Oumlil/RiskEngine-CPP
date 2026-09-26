@@ -10,6 +10,8 @@ This is not "a pricer." Black-Scholes, CRR, and Monte Carlo under GBM are three 
 
 The deliverable is [`docs/model_risk_report.md`](docs/model_risk_report.md) — the code exists to produce that report's numbers, not the other way around. For a guided tour of everything that was built, see [`docs/showcase.md`](docs/showcase.md); for a first run, `build/examples/quickstart` prices one option by every method in the library.
 
+**Performance, without giving up a single bit:** the American-option hot path went from 372 ms to 44 ms (8.2×) through cache-aware memory layout, hand-written AVX2/AVX-512 kernels, and a `std::barrier`-synchronized parallel algorithm, and every price stays bit-identical at any vector width and any thread count (report §9.5). The engine is also a Python module (`import riskengine`).
+
 ## Why three methods on purpose
 
 | Method | Convergence | What it's good for | What it misses |
@@ -25,6 +27,7 @@ Full methodology, formulas and verified reference numbers: [`docs/model_risk_rep
 - Header-only C++20 library (`include/riskengine/`), built around concepts rather than inheritance: `Pricer` (closed form, trees), `StochasticPricer` (Monte Carlo), `PathModel` (GBM, Heston, Merton), terminal and path payoffs, control variates. No virtual dispatch in the hot path; a model or payoff that lacks the required interface is rejected at compile time, and an estimator applied to a Greek it cannot estimate is rejected at run time.
 - Every Monte Carlo result is an `Estimate` carrying its standard error, and a stochastic pricer is a pure function of (market, seed): common random numbers come for free, and the fixed-block reduction makes results bit-identical for any thread count.
 - Experiments (`experiments/`) produce every number and figure of the report, with their metadata (git commit, compiler, flags, CPU).
+- SIMD kernels are written once against a small vector-width traits layer (`core/simd.hpp`) that exposes only integer and correctly rounded IEEE operations, which is what makes every vector width reproduce the scalar bits.
 
 ## Status
 
@@ -37,6 +40,12 @@ The report [`docs/model_risk_report.md`](docs/model_risk_report.md) is complete:
 - **Phase 5, Greeks under noise:** finite differences (independent seeds, common random numbers), pathwise (checked by forward automatic differentiation), likelihood ratio and mixed estimators, on a call and a digital. Measured convergence rates match theory (e.g. −0.40 against −2/5 for the CRN digital delta); the pathwise digital delta converges, with zero standard error, to 0 instead of 0.0188; the report ends with a payoff × regime × Greek recommendation matrix.
 - **Phase 6, risk measures on non-linear positions:** on a delta-hedged short straddle, delta-normal VaR is 0, delta-gamma normal understates the full-revaluation VaR by 41 %, and adding the implied-vol factor doubles it. A 34-year backtest on frozen FRED data (NASDAQ, VIX, T-bill) puts the linear and quadratic methods in the Basel red zone in every 250-day window; historical simulation passes coverage on average but fails Christoffersen's independence test (clustered crisis exceptions). Historical stress scenarios (1987, 2008, 2018, 2020) cost up to 11 times the historical 99 % VaR.
 - **Phase 8, performance and write-up:** a Google Benchmark suite (Black-Scholes 34 ns, n = 1,000 tree 0.15 ms, 93 % parallel efficiency on 4 threads), two performance pathologies found and measured (subnormal numbers slowing the tree 9×, fixed with bit-identical results; false sharing 20× on adjacent atomics), and one command, `cmake --build <dir> --target report`, that regenerates every result and figure.
+- **Low-level performance work** (report §9.5), each step chosen by profiling the one before, every result bit-identical:
+  - memory layout: one contiguous path buffer instead of 262,144 heap allocations; a lookup table in place of `std::pow` in the inner loops;
+  - SIMD: the Philox generator and the AS241 inverse normal as one template over the vector width (AVX2, 4 lanes; AVX-512F, 8 lanes), vectorizing only what IEEE 754 rounds exactly and keeping `log` scalar, with branchless compaction of the random tail lanes; a read-ahead buffer brings the European engine the same batched draws (1M paths: 20.1 → 10.0 ms);
+  - threads: Longstaff-Schwartz split across cores, a `std::barrier` completion step running each date's regression once in path order (3.98× on 12 threads); a date-major layout that made it slower was measured and reverted;
+  - an intermittent crash traced in the disassembly to a MinGW stack-alignment bug (GCC 54412) and fixed;
+  - CI: AVX2 and AVX-512 builds, ThreadSanitizer, AddressSanitizer/UBSan, and the Python module on Linux and Windows.
 - **Phase 7, model risk:** Heston (little-trap characteristic function; Andersen's QE and full-truncation Euler) and Merton (series; exact simulation), checked against 30-digit references. Calibrated to the same at-the-money price as Black-Scholes, they disagree by up to 146 % on an 80 put and 108 % on an up-and-out barrier; a Black-Scholes delta hedge stalls at a P&L sd of 2.8–2.9 per option in their worlds, whatever the frequency; under Heston with Feller violated, Euler at 320 steps is still 27 standard errors off where QE is within noise.
 
 ## Building
