@@ -1155,9 +1155,9 @@ to other machines better than the absolute numbers.
   the engine (one step, one factor, written for any `PathModel`).
 - **Antithetic variates** draw one normal for two paths, and it shows: 26.1 ms for the same 2²⁰
   payoff evaluations.
-- **What would close the gap:** a batched and vectorized normal generator and `exp`
-  (§10). It was not pursued: nothing in this
-  report is limited by Monte Carlo speed.
+- **What would close the gap:** a batched and vectorized normal generator and `exp`. The
+  normal generator is now vectorized, opt-in and bit-identical (§9.5); `exp` is not, and nothing
+  in this report is limited by Monte Carlo speed.
 
 ### 9.2 Thread scaling of the Monte Carlo engine
 
@@ -1224,6 +1224,48 @@ succeed. The same care produced the atomic variant of §9.3.
 **Rule.** Check what a benchmark computes, not only how fast: a time shorter than the work it
 claims to do, or than a cheaper operation it contains, is a bug until proven otherwise.
 
+### 9.5 The Longstaff-Schwartz hot path: memory layout and SIMD
+
+Longstaff-Schwartz (§4.4) is the one method that stores every path, so it was profiled and
+optimized under a hard constraint: **every price must stay bit-identical**. Each step was measured
+before the next was chosen. These numbers come from a different machine from §9.1–9.3 (a Ryzen 5
+9600X desktop, GCC 15.2, `-O3`), which shows about 10 % run-to-run noise, so each ratio below was
+measured side by side in one session, as the median of 5–7 runs.
+
+| Step | What changed | Canonical American put, 2¹⁸ paths |
+|---|---|---|
+| Start | `std::vector<std::vector<double>>` paths, `std::pow` in the inner loops | 354–360 ms |
+| 1. Memory layout | one contiguous row-major buffer; `std::pow(d, j)` replaced by a 51-entry table | 282 ms |
+| 2. Batched draws | a path's 50 normals drawn as one batch, apart from the `exp` loop | 252 ms |
+| 3. AVX2 inverse normal | central 85 % of uniforms inverted four at a time | 211–220 ms |
+| 4. AVX2 Philox | four generator counters per instruction | **193 ms (1.86×)** |
+
+- **Storage alone** is worth far more than its end-to-end share: at 2¹⁸ paths of 50 steps the
+  vector of vectors writes at 375 M values/s against 1.1 G/s for the flat buffer (2.9×), because
+  262,144 separate allocations stop fitting in cache together. End to end it is ~10 %: storage
+  was never the bottleneck, which is why the next steps were chosen by profiling, not by guess.
+- **A normal draw** cost 8.1 ns: 2.2 ns of Philox and 5.6 ns of AS241 inversion. The
+  inversion's central branch (85 % of draws) is only +, −, × and ÷, so it runs four lanes at a
+  time with the scalar operation order and no fused multiply-add: each lane gives the scalar
+  bits. Tails need `log`, whose vectorized versions round differently from libm, so `log` alone
+  stays scalar and the rest of the tail formula (√, two polynomials, ÷) is vectorized. Philox is
+  integer-only and vectorizes exactly. Batched normals: 121 → 250 M/s (2.05×).
+- **Where the rest went.** The first vectorized inversion gained only 1.5×: with 15 % tail lanes,
+  a four-lane chunk is all-central only 0.85⁴ = 52 % of the time. Splitting each block into a
+  central pass (masked store) and a gathered tail pass, then making the tail-index collection
+  and the tail-side choice branchless (tail lanes fall at random, so each `if` mispredicted),
+  took it to 2.2×. The central kernel alone runs at 4.35×; the floor is the scalar `log`.
+
+**Verification.** The batched functions are compared with the scalar ones as raw bit patterns: a
+million uniforms plus every branch boundary (0, 1, NaN, 0.075 and 0.925 and their neighbours,
+denormals, the r = 5 switch), in place, at every length from 0 to 20, and across the generator's
+spare-uniform state; the four-lane Philox against the scalar one on the Random123 vectors,
+100,000 random counters and the index carry at 2³². A CI job builds with
+`-DRISKENGINE_ENABLE_AVX2=ON` and runs the whole suite, golden values included, on Linux.
+
+**Rule.** Vectorize what IEEE 754 rounds exactly, keep the rest scalar, and prove bit-identity
+with tests rather than argue it. A faster number that no longer reproduces is a different number.
+
 ## 10. Limitations and future work
 
 **Model and instruments.**
@@ -1251,7 +1293,8 @@ claims to do, or than a cheaper operation it contains, is a bug until proven oth
   against a finer tree of the same kind for the American put. Leisen-Reimer Greeks, whose nodes
   are not centred on the spot, were not implemented.
 - **Monte Carlo speed.** 38.6 ms per million single-threaded paths, twice its target
-  (§9.1). Batched, vectorized normal generation and `exp` would close the gap; no result of this
+  (§9.1). Normal generation is now vectorized (§9.5, opt-in); a vectorized `exp` would close the
+  rest of the gap, but not bit-identically; no result of this
   report was limited by it.
 
 **Risk measures.**

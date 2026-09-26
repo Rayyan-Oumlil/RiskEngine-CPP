@@ -191,7 +191,7 @@ The book is a delta-hedged short straddle. Its one-day 99 % VaR by method:
 
 ### Phase 8 — Performance and write-up
 
-| Operation | Median | Plan target |
+| Operation | Median | Target |
 |---|---|---|
 | Black-Scholes price (+ Greeks) | 34 ns (36 ns) | < 100 ns ✓ |
 | Tree, n = 1,000 (European / American) | 0.15 ms / 0.52 ms | < 5 ms ✓ |
@@ -203,6 +203,16 @@ Two pathologies were found by measuring and are documented in the report:
   it 9× faster, with bit-identical results.
 - **False sharing** makes adjacent atomic counters 20× slower than padded ones. The engine avoids
   it by construction.
+
+Then the Longstaff-Schwartz hot path was taken apart and rebuilt, **every price bit-identical**,
+each step chosen by profiling the one before (report §9.5):
+- **Memory layout.** 262,144 paths as separate heap allocations became one contiguous buffer
+  (storage 2.9× faster), and `std::pow` in the inner loops became a 51-entry table.
+- **AVX2, exact by construction.** The inverse normal vectorizes only what IEEE 754 rounds
+  exactly (+, −, ×, ÷, √, in the scalar order, no FMA) and keeps `log` scalar; Philox runs four
+  counters per instruction. Branchless compaction handles the random tail lanes.
+- **Result:** batched normals 121 → 250 M/s; the American put at 2¹⁸ paths **360 → 193 ms
+  (1.86×)**. A CI job runs the whole suite, golden values included, on the AVX2 build.
 
 ---
 
