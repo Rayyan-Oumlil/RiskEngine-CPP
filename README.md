@@ -1,4 +1,6 @@
-# RiskEngine-CPP
+# RiskEngine-CPP
+
+[![CI](https://github.com/Rayyan-Oumlil/RiskEngine-CPP/actions/workflows/ci.yml/badge.svg)](https://github.com/Rayyan-Oumlil/RiskEngine-CPP/actions/workflows/ci.yml)
 
 A C++20 options pricing and risk engine that prices the same option three different ways — closed-form Black-Scholes, a Cox-Ross-Rubinstein binomial tree, and Monte Carlo simulation — and rigorously studies **where and why the methods disagree**.
 
